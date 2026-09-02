@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 420
 
     env:
-      OLLAMA_MODEL: gemma4:31b
+      OLLAMA_MODEL: qwen3-coder
 
       COMPONENT_CHECKOUT_PATH: workspace/component-source
       COGNIA_REPO_PATH: workspace/dnext-ai-rnd
@@ -154,7 +154,7 @@ jobs:
           cat > "$CONFIG_FILE" <<'EOF'
           {
             "$schema": "https://opencode.ai/config.json",
-            "model": "ollama-cloud/gemma4:31b",
+            "model": "ollama-cloud/qwen3-coder"
             "provider": {
               "ollama-cloud": {
                 "npm": "@ai-sdk/openai-compatible",
@@ -164,9 +164,10 @@ jobs:
                   "apiKey": "{env:OLLAMA_API_KEY}"
                 },
                 "models": {
-                  "gemma4:31b": {
-                    "name": "Gemma 4 31B"
+                  "qwen3-coder": {
+                    "name": "Qwen3 Coder"
                   }
+                
                 }
               }
             }
