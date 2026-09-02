@@ -154,7 +154,7 @@ jobs:
           cat > "$CONFIG_FILE" <<'EOF'
           {
             "$schema": "https://opencode.ai/config.json",
-            "model": "ollama-cloud/qwen3-coder"
+            "model": "ollama-cloud/qwen3-coder",
             "provider": {
               "ollama-cloud": {
                 "npm": "@ai-sdk/openai-compatible",
