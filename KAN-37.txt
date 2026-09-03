@@ -1,3 +1,0 @@
-This is a test page created by n8n.
-It is linked to Jira issue KAN-XX.
-This content should appear on the Confluence page.
