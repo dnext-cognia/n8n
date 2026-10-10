@@ -1,0 +1,3 @@
+﻿id,component_name,repository_owner,repository_name,source_branch,source_commit_sha,current_commit_sha,status,last_stage,last_run_at,last_success_at,target_branch,pr_number,last_error,component_type,target_component_folder,createdAt,updatedAt
+2,dnext-dscms-service-catalog-ui,dnext-technology,dnext-dscms-service-catalog-ui,develop,,,PENDING,Null,2026-10-10T18:48:39.598Z,2026-10-10T19:08:40.402Z,,13,,FE,dnext-dscms-service-catalog-ui,2026-10-09T13:34:11.151Z,2026-10-10T20:24:35.593Z
+1,dnext-dscms-service-catalog-mgmt-srvc,dnext-technology,dnext-dscms-service-catalog-mgmt-srvc,develop,,,PENDING,Null,2026-10-10T19:57:00.631Z,2026-10-10T18:48:39.467Z,,12,,BE,dnext-dscms-srvc-catalog-mgmt-srvc,2026-10-09T13:33:18.569Z,2026-10-10T20:24:40.018Z
