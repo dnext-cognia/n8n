@@ -1,0 +1,208 @@
+{
+  "name": "Reverse Engineering Workflow: GitHub Repo to SDS-SRS-BRS Spec Test",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -4304,
+        3072
+      ],
+      "id": "46a4dab9-e910-4938-9407-0d552a7d49b9",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_component_tracker",
+          "mode": "name"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -4080,
+        3072
+      ],
+      "id": "a6a5ac30-11bf-4a3d-90a8-c5a707ce8c67",
+      "name": "Get Components"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\n\nreturn rows.filter(item => {\n  const status = item.json.status;\n\n  return status === 'PENDING' || status === 'FAILED';\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3872,
+        3072
+      ],
+      "id": "f9db49bf-4bb7-4896-a6c9-aad144924f06",
+      "name": "Filter Components"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -3632,
+        3072
+      ],
+      "id": "a2034910-a0fe-4198-975d-8a12512a1158",
+      "name": "Loop Over Components"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "P85mkeFvbDFWxi9O",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/P85mkeFvbDFWxi9O",
+          "cachedResultName": "Cognia RE - Process Component-test"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "branch_firstItem",
+              "displayName": "branch_firstItem",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "owner_firstItem",
+              "displayName": "owner_firstItem",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "repo_firstItem",
+              "displayName": "repo_firstItem",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Prepare_Files_for_GitHub_branch_firstItem",
+              "displayName": "Prepare_Files_for_GitHub_branch_firstItem",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "baseBranch_firstItem",
+              "displayName": "baseBranch_firstItem",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -3392,
+        3152
+      ],
+      "id": "cfc6446d-ece1-4c87-8de3-66c3dbd2dfda",
+      "name": "Call 'Cognia RE - Process Component'"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get Components",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Components": {
+      "main": [
+        [
+          {
+            "node": "Filter Components",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Components": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Components",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Components": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Call 'Cognia RE - Process Component'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Cognia RE - Process Component'": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Components",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "67ef24bf-23c5-4513-8fe2-c01fb2a2d84c",
+  "meta": {
+    "instanceId": "9f6a250b5e41057ebc46f16e9a43e0df40b68d425919a02fddb29ca567a38e97"
+  },
+  "id": "kTu_VJh-g4BgUezO-W_Rr",
+  "tags": []
+}
