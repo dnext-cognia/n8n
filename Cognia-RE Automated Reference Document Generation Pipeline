@@ -1,7 +1,0 @@
-**Cognia-RE Automated Reference Document Generation Pipeline**
-
-An n8n-based automation pipeline that generates SDS, SRS, and BRS reference documentation from backend and frontend GitHub repositories using Cognia-RE, OpenCode, and Ollama Cloud.
-
-The main workflow manages component processing, execution tracking, and orchestration, while the subworkflow handles source code scanning, document generation, validation, and GitHub publishing.
-
-Generated documents are published to component-specific feature branches, with automated Pull Request creation, execution logging, and status tracking.
