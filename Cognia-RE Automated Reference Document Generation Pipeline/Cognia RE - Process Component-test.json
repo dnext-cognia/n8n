@@ -1,0 +1,1805 @@
+{
+  "name": "Cognia RE - Process Component-test",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "70dc0c1f-f8e2-4808-81b8-93bb95bb46fd",
+      "typeVersion": 1.1,
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -3792,
+        4000
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst input = $input.first().json;\nconst component = $('Restore Component Input').first().json;\n\nconst progress = input.reProgress || {};\n\nlet failedStage = 'UNKNOWN';\n\nif (!progress.workspacePrepared) {\n  failedStage = 'PREPARE_WORKSPACE';\n} else if (!progress.sdsScanCompleted) {\n  failedStage = 'SDS_SCAN';\n} else if (!progress.sdsGenerated) {\n  failedStage = 'SDS_GENERATE';\n} else if (!progress.srsScanCompleted) {\n  failedStage = 'SRS_SCAN';\n} else if (!progress.srsGenerated) {\n  failedStage = 'SRS_GENERATE';\n} else if (!progress.brsScanCompleted) {\n  failedStage = 'BRS_SCAN';\n} else if (!progress.brsGenerated) {\n  failedStage = 'BRS_GENERATE';\n}\n\nconst errorMessage =\n  input.error?.message ||\n  input.message ||\n  `${failedStage} did not complete successfully`;\n\nreturn [{\n  json: {\n    trackerId: component.trackerId,\n    auditId: component.auditId,\n    componentName: component.componentName,\n    status: 'FAILED',\n    failed_stage: failedStage,\n    error_message: errorMessage,\n    finished_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2672,
+        4448
+      ],
+      "id": "971d9664-b193-47d5-bc8c-538d9989716b",
+      "name": "Prepare Generation Error"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "34aa5f84-521a-40c0-9293-2ace240db534",
+              "name": "status",
+              "value": "FAILED",
+              "type": "string"
+            },
+            {
+              "id": "447b9dbd-bf52-46fe-b90f-d25c0299d8c4",
+              "name": "last_stage",
+              "value": "={{ $json.failed_stage }}",
+              "type": "string"
+            },
+            {
+              "id": "3964fdff-db20-4f26-9024-c259bd710677",
+              "name": "last_error",
+              "value": "={{ $json.error_message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2464,
+        4448
+      ],
+      "id": "911b12c2-55b9-46b1-94d6-4779f97ca8b1",
+      "name": "Prepare Tracker Generation Failed"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_component_tracker",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=id",
+              "condition": "=eq",
+              "keyValue": "={{ $('Restore Component Input').first().json.trackerId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -2240,
+        4448
+      ],
+      "id": "e9e10971-d63b-4929-9d20-8c29283cfe8f",
+      "name": "Tracker - Set Generation Failed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "34aa5f84-521a-40c0-9293-2ace240db534",
+              "name": "status",
+              "value": "FAILED",
+              "type": "string"
+            },
+            {
+              "id": "447b9dbd-bf52-46fe-b90f-d25c0299d8c4",
+              "name": "failed_stage",
+              "value": "={{ $('Prepare Generation Error').first().json.failed_stage }}",
+              "type": "string"
+            },
+            {
+              "id": "3964fdff-db20-4f26-9024-c259bd710677",
+              "name": "error_message",
+              "value": "={{ $('Prepare Generation Error').first().json.error_message }}",
+              "type": "string"
+            },
+            {
+              "id": "fb6013ac-2e86-4d19-950a-a8e839a7fcf0",
+              "name": "finished_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2032,
+        4448
+      ],
+      "id": "8b79f4a8-b815-4c6e-bd0f-27d4ab10dabc",
+      "name": "Prepare Audit Generation Failed"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_generation_audit",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=id",
+              "condition": "=eq",
+              "keyValue": "={{ $('Restore Component Input').first().json.trackerId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -1808,
+        4448
+      ],
+      "id": "70eb60bd-afa4-410e-9303-a084ed819790",
+      "name": "Audit - Set Generation Failed"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "589280fa-93c5-447f-a09d-872455caea05",
+              "leftValue": "={{ !$json.existingContent || $json.existingContent !== $json.content }}",
+              "rightValue": "={{ true }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -544,
+        4416
+      ],
+      "id": "6249561d-db25-402c-9fab-76fa86a9fdc6",
+      "name": "Content Changed?1"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst errorItem = $input.first().json;\n\nconst component = $('Restore Component Input').first().json;\n\nconst message =\n  errorItem.error?.message ||\n  errorItem.message ||\n  'GitHub PUT File failed';\n\nconst filePath =\n  $('Prepare Upsert Payload1').first().json.filePath ||\n  'unknown';\n\nreturn [{\n  json: {\n    trackerId: component.trackerId,\n    auditId: component.auditId,\n    componentName: component.componentName,\n\n    status: 'FAILED',\n    failed_stage: 'GITHUB_PUT_FILE',\n    last_stage: 'GITHUB_PUT_FILE',\n\n    error_message: `File: ${filePath} | Error: ${message}`,\n    finished_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        4416
+      ],
+      "id": "81d1434b-710a-409f-863d-8a2a97fa7c0c",
+      "name": "Prepare Publish Error"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fbdb4e48-62ab-40bb-9a8e-988834227f9c",
+              "name": "status",
+              "value": "FAILED",
+              "type": "string"
+            },
+            {
+              "id": "cf98ac4e-b886-4e3a-8cc2-4f67c39ca6de",
+              "name": "last_stage",
+              "value": "={{ $json.last_stage }}",
+              "type": "string"
+            },
+            {
+              "id": "86d415d8-d3a3-4c97-b1fc-fe709f8b1252",
+              "name": "last_error",
+              "value": "={{ $json.error_message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        64,
+        4416
+      ],
+      "id": "930726b4-424f-4a25-954f-e9797908a8d5",
+      "name": "Prepare Tracker Failed Update"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_component_tracker",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=id",
+              "condition": "=eq",
+              "keyValue": "={{ $('Restore Component Input').first().json.trackerId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        4416
+      ],
+      "id": "1efcc3a4-70c0-422b-9dc5-e7c70a8a4e58",
+      "name": "Tracker - Set Failed"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_generation_audit",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=id",
+              "condition": "=eq",
+              "keyValue": "={{ $('Restore Component Input').first().json.trackerId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        688,
+        4416
+      ],
+      "id": "6ec68262-436e-4a98-a82e-bc848871db29",
+      "name": "Audit - Set Failed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fbdb4e48-62ab-40bb-9a8e-988834227f9c",
+              "name": "status",
+              "value": "FAILED",
+              "type": "string"
+            },
+            {
+              "id": "cf98ac4e-b886-4e3a-8cc2-4f67c39ca6de",
+              "name": "failed_stage",
+              "value": "=GITHUB_PUT_FILE",
+              "type": "string"
+            },
+            {
+              "id": "86d415d8-d3a3-4c97-b1fc-fe709f8b1252",
+              "name": "error_message",
+              "value": "={{ $('Prepare Publish Error').first().json.error_message }}",
+              "type": "string"
+            },
+            {
+              "id": "6bc0ec46-0672-40d3-84e5-af4587a79cab",
+              "name": "finished_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        4416
+      ],
+      "id": "c95e17e3-47f8-4a4d-852d-0675def0afff",
+      "name": "Prepare Audit Failed Update"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{\n  'https://api.github.com/repos/' +\n  $json.owner +\n  '/' +\n  $json.repo +\n  '/contents/' +\n  $json.filePath\n}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    message: $json.githubPayload.message,\n    content: $json.githubPayload.content,\n    branch: $json.githubPayload.branch,\n    ...($json.githubPayload.sha\n      ? { sha: $json.githubPayload.sha }\n      : {})\n  }\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -352,
+        4400
+      ],
+      "id": "b42db02e-8f02-4683-b4d4-85baf5ca55eb",
+      "name": "PUT File1",
+      "credentials": {
+        "githubApi": {
+          "id": "RjbLWfjghp6eS9qR",
+          "name": "GitHub_product_docs_write"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const existingFile = $json;\n\n// Loop Over Items'taki mevcut doküman\nconst source = $('Loop Over Documents').item.json;\n\nif (!source) {\n  throw new Error('Source document could not be resolved');\n}\n\nif (!source.documentType) {\n  throw new Error('documentType missing');\n}\n\nif (!source.content || !source.content.trim()) {\n  throw new Error(\n    `${source.documentType} content is missing or empty`\n  );\n}\n\nif (!source.filePath) {\n  throw new Error(\n    `${source.documentType} filePath is missing`\n  );\n}\n\n\n// --------------------------------------------------\n// GitHub'da dosya mevcut mu?\n// --------------------------------------------------\n\nconst fileExists =\n  existingFile.statusCode === 200 &&\n  existingFile.body &&\n  existingFile.body.sha;\n\n\n// --------------------------------------------------\n// GitHub PUT body\n// --------------------------------------------------\n\nconst payload = {\n  message:\n    `docs: update ${source.documentType} reference`,\n\n  content:\n    Buffer\n      .from(source.content, 'utf8')\n      .toString('base64'),\n\n  branch:\n    source.branch\n};\n\n\n// Dosya zaten varsa update için SHA zorunlu\nif (fileExists) {\n  payload.sha = existingFile.body.sha;\n}\n\n\n// --------------------------------------------------\n// Output\n// --------------------------------------------------\n\nreturn {\n  json: {\n    ...source,\n\n    fileExists,\n\n    existingSha:\n      fileExists\n        ? existingFile.body.sha\n        : null,\n\n    commitMessage:\n      payload.message,\n\n    githubPayload:\n      payload\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        4400
+      ],
+      "id": "1d89c0e2-94d2-4677-a305-fe526c131e5e",
+      "name": "Prepare Upsert Payload1"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/dnext-technology/dnext-product-docs-test/contents/{{ $json.filePath }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ref",
+              "value": "={{ $json.branch }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1056,
+        4400
+      ],
+      "id": "fa3219e0-4857-431c-aa08-80cd3d8ec194",
+      "name": "Check File Exists2",
+      "credentials": {
+        "githubApi": {
+          "id": "RjbLWfjghp6eS9qR",
+          "name": "GitHub_product_docs_write"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "useDataOfInput": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1472,
+        4320
+      ],
+      "id": "f4bb964a-b542-4c76-b863-7e025e6738b6",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst { spawn } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst input = $input.first().json;\nconst workspace = input.reWorkspace || {};\n\nconst FRAMEWORK = workspace.brsFrameworkPath;\nconst OUTPUT = workspace.brsOutputPath;\nconst MODEL = workspace.ollamaModel;\n\nfunction log(stage, message) {\n  console.log(\n    `[${new Date().toISOString()}] [BRS-GENERATE] [${stage}] ${message}`\n  );\n}\n\nfunction listMarkdown(root) {\n  const files = [];\n\n  function walk(dir) {\n    for (const entry of fs.readdirSync(dir, {\n      withFileTypes: true\n    })) {\n      const full = path.join(dir, entry.name);\n\n      if (entry.isDirectory()) {\n        walk(full);\n      } else if (\n        entry.isFile() &&\n        entry.name.toLowerCase().endsWith('.md')\n      ) {\n        files.push(path.relative(root, full));\n      }\n    }\n  }\n\n  walk(root);\n  return files;\n}\n\n\nfunction selectDocument(files) {\n  const normalized = files.map(file => ({\n    original: file,\n    relative: file.replace(/\\\\/g, '/').toLowerCase(),\n    name: path.basename(file).toLowerCase()\n  }));\n\n  const finalCandidates = normalized.filter(item =>\n    item.relative.split('/').includes('final') &&\n    /^brs(?:-re|-document|-final|-master|-complete)?\\.md$/.test(item.name)\n  );\n\n  if (finalCandidates.length === 1) {\n    return finalCandidates[0].original;\n  }\n\n  if (finalCandidates.length > 1) {\n    throw new Error(\n      'Multiple BRS final documents: ' +\n      JSON.stringify(finalCandidates.map(x => x.original))\n    );\n  }\n\n  const priority = [\n    'brs-re-document.md',\n    'brs.md',\n    'brs-final.md',\n    'brs-master.md',\n    'brs-re.md',\n    'brs-re-complete.md',\n    'brs-complete.md'\n  ];\n\n  for (const expected of priority) {\n    const matches = normalized.filter(item =>\n      item.name === expected &&\n      !item.relative.split('/').includes('sections')\n    );\n\n    if (matches.length === 1) return matches[0].original;\n\n    if (matches.length > 1) {\n      throw new Error(`Multiple BRS candidates: ${expected}`);\n    }\n  }\n\n  const candidates = normalized.filter(item => {\n    const name = item.name;\n    const parts = item.relative.split('/');\n\n    if (parts.includes('sections')) return false;\n    if (/^(section-|\\d{2}-)/.test(name)) return false;\n\n    const excluded = [\n      'manifest', 'report', 'summary', 'scan',\n      'quality', 'handoff', 'boundary',\n      'code-structure', 'project-context',\n      'tracker', 'progress'\n    ];\n\n    if (excluded.some(word => name.includes(word))) {\n      return false;\n    }\n\n    return name.startsWith('brs');\n  });\n\n  if (candidates.length === 1) {\n    return candidates[0].original;\n  }\n\n  throw new Error(\n    'BRS final document could not be identified: ' +\n    JSON.stringify({\n      candidates: candidates.map(x => x.original),\n      allFiles: files\n    })\n  );\n}\n\nfunction runGeneration() {\n  return new Promise((resolve, reject) => {\n    const started = Date.now();\n    let settled = false;\n\n    const child = spawn('opencode', [\n      'run',\n      '--continue',\n      '/generate-re-brs --interactive=false',\n      '--agent',\n      'brs-re-lead-agent',\n      '--model',\n      `ollama-cloud/${MODEL}`\n    ], {\n      cwd: FRAMEWORK,\n      stdio: ['ignore', 'pipe', 'pipe']\n    });\n\n    let stdout = '';\n    let stderr = '';\n\n    child.stdout.on('data', data => {\n      const text = data.toString();\n      stdout += text;\n      console.log(text);\n    });\n\n    child.stderr.on('data', data => {\n      const text = data.toString();\n      stderr += text;\n      console.log(text);\n    });\n\n    child.on('error', error => {\n      if (settled) return;\n      settled = true;\n      error.stdout = stdout;\n      error.stderr = stderr;\n      reject(error);\n    });\n\n    child.on('close', code => {\n      if (settled) return;\n      settled = true;\n\n      if (code !== 0) {\n        const error = new Error(\n          `BRS generation failed: exit code ${code}`\n        );\n        error.stdout = stdout;\n        error.stderr = stderr;\n        reject(error);\n        return;\n      }\n\n      resolve({\n        durationSeconds: Number(\n          ((Date.now() - started) / 1000).toFixed(1)\n        )\n      });\n    });\n  });\n}\n\ntry {\n  if (input.status === 'failed') {\n    throw new Error(\n      `Previous stage failed: ${input.stage}: ${input.error}`\n    );\n  }\n\n  if (!FRAMEWORK || !fs.existsSync(FRAMEWORK)) {\n    throw new Error('BRS framework path missing');\n  }\n\n  if (!OUTPUT || !fs.existsSync(OUTPUT)) {\n    throw new Error('BRS output path missing');\n  }\n\n  if (!MODEL) throw new Error('Ollama model missing');\n\n  if (input.reProgress?.brsScanCompleted !== true) {\n    throw new Error('BRS scan not completed');\n  }\n\n  const started = Date.now();\n\n  const before = new Map(\n    listMarkdown(OUTPUT).map(file => {\n      const stat = fs.statSync(path.join(OUTPUT, file));\n      return [file, `${stat.size}:${stat.mtimeMs}`];\n    })\n  );\n\n  log('GENERATE', 'Starting BRS generation');\n\n  const generation = await runGeneration();\n\n  const markdownFiles = listMarkdown(OUTPUT);\n\n  const selectedSourceFile = selectDocument(markdownFiles);\n  const sourcePath = path.join(OUTPUT, selectedSourceFile);\n  const stat = fs.statSync(sourcePath);\n  \n  if (!stat.isFile() || stat.size === 0) {\n    throw new Error('BRS final document is missing or empty');\n  }\n  \n  const documentWasUpdated =\n    before.get(selectedSourceFile) !==\n    `${stat.size}:${stat.mtimeMs}`;\n  \n  log(\n    'VALIDATE',\n    `Selected=${selectedSourceFile}, updated=${documentWasUpdated}`\n  );\n\n  const content = fs.readFileSync(sourcePath, 'utf8');\n\n  if (!content.trim()) {\n    throw new Error('BRS final document is empty');\n  }\n\n  const finalDocumentPath = path.join(\n    OUTPUT,\n    'brs-final.md'\n  );\n\n  if (path.resolve(sourcePath) !== path.resolve(finalDocumentPath)) {\n    fs.copyFileSync(sourcePath, finalDocumentPath);\n  }\n\n  const totalDurationSeconds = Number(\n    ((Date.now() - started) / 1000).toFixed(1)\n  );\n\n  log('DONE', `Selected: ${selectedSourceFile}`);\n\n  return [{\n    json: {\n      ...input,\n      status: 'success',\n      stage: 'brs-generate',\n      error: null,\n      reProgress: {\n        ...(input.reProgress || {}),\n        brsGenerated: true\n      },\n      brsResult: {\n        status: 'success',\n        generationDurationSeconds: generation.durationSeconds,\n        totalDurationSeconds,\n        outputPath: OUTPUT,\n        markdownFiles,\n        selectedSourceFile,\n        finalDocumentPath\n      }\n    }\n  }];\n\n} catch (error) {\n  log('FAILED', error.message);\n\n  return [{\n    json: {\n      ...input,\n      status: 'failed',\n      stage: 'brs-generate',\n      error: error.message,\n      stderr: error.stderr || null,\n      stdout: error.stdout || null,\n      reProgress: {\n        ...(input.reProgress || {}),\n        brsGenerated: false\n      },\n      brsResult: {\n        status: 'failed',\n        error: error.message\n        \n      }\n    }\n  }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3040,
+        4288
+      ],
+      "id": "7e9880e5-a501-4aa2-9590-f55ac6ccbf4c",
+      "name": "BRS - Generate1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { spawn } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst input = $json || {};\nconst workspace = input.reWorkspace || {};\n\nconst COMPONENT_CHECKOUT_PATH = workspace.componentCheckoutPath;\nconst SRS_OUTPUT = workspace.srsOutputPath;\nconst BRS_FRAMEWORK_PATH = workspace.brsFrameworkPath;\nconst OLLAMA_MODEL = workspace.ollamaModel;\n\nif (!COMPONENT_CHECKOUT_PATH) throw new Error('componentCheckoutPath missing');\nif (!SRS_OUTPUT) throw new Error('srsOutputPath missing');\nif (!BRS_FRAMEWORK_PATH) throw new Error('brsFrameworkPath missing');\nif (!OLLAMA_MODEL) throw new Error('ollamaModel missing');\n\nconst RUNNER_WORK = path.join(BRS_FRAMEWORK_PATH, '.runner-work');\nconst RUNNER_COMPONENT_SOURCE = path.join(RUNNER_WORK, 'component-source');\nconst RUNNER_SRS_OUTPUT = path.join(RUNNER_WORK, 'srs-output');\nconst BRS_OUTPUT = path.join(RUNNER_WORK, 'brs-output');\n\nfunction log(stage, message) {\n  console.log(\n    `[${new Date().toISOString()}] [BRS-SCAN] [${stage}] ${message}`\n  );\n}\n\nasync function runCommand(label, command, cwd) {\n  return new Promise((resolve, reject) => {\n    const start = Date.now();\n\n    log(label, 'START');\n\n    const child = spawn('/bin/sh', ['-c', command], {\n      cwd,\n      stdio: ['ignore', 'pipe', 'pipe']\n    });\n\n    let stdout = '';\n    let stderr = '';\n\n    child.stdout.on('data', data => {\n      const text = data.toString();\n      stdout += text;\n\n      for (const line of text.split('\\n')) {\n        if (line.trim()) log(label, `OUT: ${line}`);\n      }\n    });\n\n    child.stderr.on('data', data => {\n      const text = data.toString();\n      stderr += text;\n\n      for (const line of text.split('\\n')) {\n        if (line.trim()) log(label, `ERR: ${line}`);\n      }\n    });\n\n    child.on('error', error => {\n      error.stdout = stdout;\n      error.stderr = stderr;\n      reject(error);\n    });\n\n    child.on('close', code => {\n      const duration = ((Date.now() - start) / 1000).toFixed(1);\n\n      log(label, `END code=${code} duration=${duration}s`);\n\n      if (code === 0) {\n        resolve({\n          stdout,\n          stderr,\n          durationSeconds: Number(duration)\n        });\n        return;\n      }\n\n      const error = new Error(`${label} failed with exit code ${code}`);\n      error.stdout = stdout;\n      error.stderr = stderr;\n      reject(error);\n    });\n  });\n}\n\ntry {\n  const nodeStart = Date.now();\n\n  log('1/4', 'Validating component source and SRS output');\n\n  if (!fs.existsSync(COMPONENT_CHECKOUT_PATH)) {\n    throw new Error(`Component source not found: ${COMPONENT_CHECKOUT_PATH}`);\n  }\n\n  if (!fs.existsSync(SRS_OUTPUT)) {\n    throw new Error(`SRS output not found: ${SRS_OUTPUT}`);\n  }\n\n  if (!fs.existsSync(BRS_FRAMEWORK_PATH)) {\n    throw new Error(`BRS framework not found: ${BRS_FRAMEWORK_PATH}`);\n  }\n\n  log('1/4', 'Inputs OK');\n\n  log('2/4', 'Preparing BRS runner workspace');\n\n  fs.rmSync(RUNNER_WORK, {\n    recursive: true,\n    force: true\n  });\n\n  fs.mkdirSync(RUNNER_WORK, {\n    recursive: true\n  });\n\n  await runCommand(\n    'COPY-SOURCE',\n    `cp -R \"${COMPONENT_CHECKOUT_PATH}\" \"${RUNNER_COMPONENT_SOURCE}\"`,\n    BRS_FRAMEWORK_PATH\n  );\n\n  await runCommand(\n    'COPY-SRS',\n    `cp -R \"${SRS_OUTPUT}\" \"${RUNNER_SRS_OUTPUT}\"`,\n    BRS_FRAMEWORK_PATH\n  );\n\n  log('2/4', 'Component source and SRS copied');\n\n  log('3/4', 'Starting BRS /scan-source');\n\n  const scanResult = await runCommand(\n    'SCAN-SOURCE',\n\n    `opencode run ` +\n    `\"/scan-source --path .runner-work/component-source ` +\n    `--srs-output .runner-work/srs-output ` +\n    `--output .runner-work/brs-output\" ` +\n    `--agent brs-re-lead-agent ` +\n    `--model \"ollama-cloud/${OLLAMA_MODEL}\"`,\n\n    BRS_FRAMEWORK_PATH\n  );\n\n  log(\n    '3/4',\n    `BRS source scan completed in ${scanResult.durationSeconds}s`\n  );\n\n  log('4/4', 'Checking BRS scan output');\n\n  if (!fs.existsSync(BRS_OUTPUT)) {\n    throw new Error(`BRS output directory not created: ${BRS_OUTPUT}`);\n  }\n\n  const totalDuration =\n    ((Date.now() - nodeStart) / 1000).toFixed(1);\n\n  log('DONE', `BRS scan completed successfully in ${totalDuration}s`);\n\n  return [{\n    json: {\n      ...input,\n\n      reWorkspace: {\n        ...workspace,\n        brsRunnerWork: RUNNER_WORK,\n        brsOutputPath: BRS_OUTPUT\n      },\n\n      reProgress: {\n        ...(input.reProgress || {}),\n        brsScanCompleted: true,\n        brsGenerated: false\n      },\n\n      brsScanResult: {\n        status: 'success',\n        durationSeconds: Number(totalDuration)\n      }\n    }\n  }];\n\n} catch (error) {\n  log('FAILED', error.message);\n\n  return [{\n    json: {\n      ...input,\n      status: 'failed',\n      stage: 'brs-scan',\n      error: error.message || null,\n      stderr: error.stderr || null,\n      stdout: error.stdout || null,\n\n      reProgress: {\n        ...(input.reProgress || {}),\n        brsScanCompleted: false\n      }\n    }\n  }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3216,
+        4288
+      ],
+      "id": "88660a26-4106-41e6-9d21-81757887258e",
+      "name": "BRS - Scan Source1"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst { spawn } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst input = $input.first().json;\nconst workspace = input.reWorkspace || {};\n\nconst FRAMEWORK = workspace.srsFrameworkPath;\nconst OUTPUT = workspace.srsOutputPath;\nconst MODEL = workspace.ollamaModel;\n\nfunction log(stage, message) {\n  console.log(\n    `[${new Date().toISOString()}] [SRS-GENERATE] [${stage}] ${message}`\n  );\n}\n\nfunction listMarkdown(root) {\n  const files = [];\n\n  function walk(dir) {\n    for (const entry of fs.readdirSync(dir, {\n      withFileTypes: true\n    })) {\n      const full = path.join(dir, entry.name);\n\n      if (entry.isDirectory()) {\n        walk(full);\n      } else if (\n        entry.isFile() &&\n        entry.name.toLowerCase().endsWith('.md')\n      ) {\n        files.push(path.relative(root, full));\n      }\n    }\n  }\n\n  walk(root);\n  return files;\n}\n\n\nfunction selectDocument(files) {\n  const normalized = files.map(file => ({\n    original: file,\n    relative: file.replace(/\\\\/g, '/').toLowerCase(),\n    name: path.basename(file).toLowerCase()\n  }));\n\n  const finalCandidates = normalized.filter(item =>\n    item.relative.split('/').includes('final') &&\n    /^srs(?:-re|-document|-final|-master|-complete)?\\.md$/.test(item.name)\n  );\n\n  if (finalCandidates.length === 1) {\n    return finalCandidates[0].original;\n  }\n\n  if (finalCandidates.length > 1) {\n    throw new Error(\n      'Multiple SRS final documents: ' +\n      JSON.stringify(finalCandidates.map(x => x.original))\n    );\n  }\n\n  const priority = [\n    'srs-re-document.md',\n    'srs.md',\n    'srs-final.md',\n    'srs-master.md',\n    'srs-re.md',\n    'srs-re-complete.md',\n    'srs-complete.md'\n  ];\n\n  for (const expected of priority) {\n    const matches = normalized.filter(item =>\n      item.name === expected &&\n      !item.relative.split('/').includes('sections')\n    );\n\n    if (matches.length === 1) return matches[0].original;\n\n    if (matches.length > 1) {\n      throw new Error(`Multiple SRS candidates: ${expected}`);\n    }\n  }\n\n  const candidates = normalized.filter(item => {\n    const name = item.name;\n    const parts = item.relative.split('/');\n\n    if (parts.includes('sections')) return false;\n    if (/^(section-|\\d{2}-)/.test(name)) return false;\n\n    const excluded = [\n      'manifest', 'report', 'summary', 'scan',\n      'quality', 'handoff', 'boundary',\n      'code-structure', 'project-context',\n      'tracker', 'progress'\n    ];\n\n    if (excluded.some(word => name.includes(word))) {\n      return false;\n    }\n\n    return name.startsWith('srs');\n  });\n\n  if (candidates.length === 1) {\n    return candidates[0].original;\n  }\n\n  throw new Error(\n    'SRS final document could not be identified: ' +\n    JSON.stringify({\n      candidates: candidates.map(x => x.original),\n      allFiles: files\n    })\n  );\n}\n\n\nfunction runGeneration() {\n  return new Promise((resolve, reject) => {\n    const started = Date.now();\n    let settled = false;\n\n    const child = spawn('opencode', [\n      'run',\n      '--continue',\n      '/generate-re-srs --interactive=false',\n      '--agent',\n      'srs-re-lead-agent',\n      '--model',\n      `ollama-cloud/${MODEL}`\n    ], {\n      cwd: FRAMEWORK,\n      stdio: ['ignore', 'pipe', 'pipe']\n    });\n\n    let stdout = '';\n    let stderr = '';\n\n    child.stdout.on('data', data => {\n      const text = data.toString();\n      stdout += text;\n      console.log(text);\n    });\n\n    child.stderr.on('data', data => {\n      const text = data.toString();\n      stderr += text;\n      console.log(text);\n    });\n\n    child.on('error', error => {\n      if (settled) return;\n      settled = true;\n      error.stdout = stdout;\n      error.stderr = stderr;\n      reject(error);\n    });\n\n    child.on('close', code => {\n      if (settled) return;\n      settled = true;\n\n      if (code !== 0) {\n        const error = new Error(\n          `SRS generation failed: exit code ${code}`\n        );\n        error.stdout = stdout;\n        error.stderr = stderr;\n        reject(error);\n        return;\n      }\n\n      resolve({\n        durationSeconds: Number(\n          ((Date.now() - started) / 1000).toFixed(1)\n        )\n      });\n    });\n  });\n}\n\ntry {\n  if (input.status === 'failed') {\n    throw new Error(\n      `Previous stage failed: ${input.stage}: ${input.error}`\n    );\n  }\n\n  if (!FRAMEWORK || !fs.existsSync(FRAMEWORK)) {\n    throw new Error('SRS framework path missing');\n  }\n\n  if (!OUTPUT || !fs.existsSync(OUTPUT)) {\n    throw new Error('SRS output path missing');\n  }\n\n  if (!MODEL) throw new Error('Ollama model missing');\n\n  if (input.reProgress?.srsScanCompleted !== true) {\n    throw new Error('SRS scan not completed');\n  }\n\n  const started = Date.now();\n\n  const before = new Map(\n    listMarkdown(OUTPUT).map(file => {\n      const stat = fs.statSync(path.join(OUTPUT, file));\n      return [file, `${stat.size}:${stat.mtimeMs}`];\n    })\n  );\n\n  log('GENERATE', 'Starting SRS generation');\n\n  const generation = await runGeneration();\n\n  const markdownFiles = listMarkdown(OUTPUT);\n\n  const selectedSourceFile = selectDocument(markdownFiles);\n  const sourcePath = path.join(OUTPUT, selectedSourceFile);\n\n  const stat = fs.statSync(sourcePath);\n  \n  if (!stat.isFile() || stat.size === 0) {\n    throw new Error('SRS final document is missing or empty');\n  }\n  \n  const documentWasUpdated =\n    before.get(selectedSourceFile) !==\n    `${stat.size}:${stat.mtimeMs}`;\n  \n  log(\n    'VALIDATE',\n    `Selected=${selectedSourceFile}, updated=${documentWasUpdated}`\n  );\n\n  const content = fs.readFileSync(sourcePath, 'utf8');\n\n  if (!content.trim()) {\n    throw new Error('SRS final document is empty');\n  }\n\n  const finalDocumentPath = path.join(\n    OUTPUT,\n    'srs-final.md'\n  );\n\n  if (path.resolve(sourcePath) !== path.resolve(finalDocumentPath)) {\n    fs.copyFileSync(sourcePath, finalDocumentPath);\n  }\n\n  const totalDurationSeconds = Number(\n    ((Date.now() - started) / 1000).toFixed(1)\n  );\n\n  log('DONE', `Selected: ${selectedSourceFile}`);\n\n  return [{\n    json: {\n      ...input,\n      status: 'success',\n      stage: 'srs-generate',\n      error: null,\n      reProgress: {\n        ...(input.reProgress || {}),\n        srsGenerated: true\n      },\n      srsResult: {\n        status: 'success',\n        generationDurationSeconds: generation.durationSeconds,\n        totalDurationSeconds,\n        outputPath: OUTPUT,\n        markdownFiles,\n        selectedSourceFile,\n        finalDocumentPath\n      }\n    }\n  }];\n\n} catch (error) {\n  log('FAILED', error.message);\n\n  return [{\n    json: {\n      ...input,\n      status: 'failed',\n      stage: 'srs-generate',\n      error: error.message,\n      stderr: error.stderr || null,\n      stdout: error.stdout || null,\n      reProgress: {\n        ...(input.reProgress || {}),\n        srsGenerated: false\n      },\n      srsResult: {\n        status: 'failed',\n        error: error.message\n      }\n    }\n  }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3392,
+        4288
+      ],
+      "id": "3cd97c1e-e33e-4f9f-b717-c74814ba3537",
+      "name": "SRS - Generate1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { spawn } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst input = $json || {};\nconst workspace = input.reWorkspace || {};\n\nconst COMPONENT_CHECKOUT_PATH = workspace.componentCheckoutPath;\nconst SDS_OUTPUT = workspace.sdsOutputPath;\nconst SRS_FRAMEWORK_PATH = workspace.srsFrameworkPath;\nconst OLLAMA_MODEL = workspace.ollamaModel;\n\nif (!COMPONENT_CHECKOUT_PATH) throw new Error('componentCheckoutPath missing');\nif (!SDS_OUTPUT) throw new Error('sdsOutputPath missing');\nif (!SRS_FRAMEWORK_PATH) throw new Error('srsFrameworkPath missing');\nif (!OLLAMA_MODEL) throw new Error('ollamaModel missing');\n\nconst RUNNER_WORK = path.join(SRS_FRAMEWORK_PATH, '.runner-work');\nconst RUNNER_COMPONENT_SOURCE = path.join(RUNNER_WORK, 'component-source');\nconst RUNNER_SDS_OUTPUT = path.join(RUNNER_WORK, 'sds-output');\nconst SRS_OUTPUT = path.join(RUNNER_WORK, 'srs-output');\n\nfunction log(stage, message) {\n  console.log(\n    `[${new Date().toISOString()}] [SRS-SCAN] [${stage}] ${message}`\n  );\n}\n\nasync function runCommand(label, command, cwd) {\n  return new Promise((resolve, reject) => {\n    const start = Date.now();\n\n    log(label, 'START');\n\n    const child = spawn('/bin/sh', ['-c', command], {\n      cwd,\n      stdio: ['ignore', 'pipe', 'pipe']\n    });\n\n    let stdout = '';\n    let stderr = '';\n\n    child.stdout.on('data', data => {\n      const text = data.toString();\n      stdout += text;\n\n      for (const line of text.split('\\n')) {\n        if (line.trim()) log(label, `OUT: ${line}`);\n      }\n    });\n\n    child.stderr.on('data', data => {\n      const text = data.toString();\n      stderr += text;\n\n      for (const line of text.split('\\n')) {\n        if (line.trim()) log(label, `ERR: ${line}`);\n      }\n    });\n\n    child.on('error', error => {\n      error.stdout = stdout;\n      error.stderr = stderr;\n      reject(error);\n    });\n\n    child.on('close', code => {\n      const duration = ((Date.now() - start) / 1000).toFixed(1);\n\n      log(label, `END code=${code} duration=${duration}s`);\n\n      if (code === 0) {\n        resolve({\n          stdout,\n          stderr,\n          durationSeconds: Number(duration)\n        });\n        return;\n      }\n\n      const error = new Error(`${label} failed with exit code ${code}`);\n      error.stdout = stdout;\n      error.stderr = stderr;\n      reject(error);\n    });\n  });\n}\n\ntry {\n  const nodeStart = Date.now();\n\n  // STEP 1\n  log('1/4', 'Validating component source and SDS output');\n\n  if (!fs.existsSync(COMPONENT_CHECKOUT_PATH)) {\n    throw new Error(`Component source not found: ${COMPONENT_CHECKOUT_PATH}`);\n  }\n\n  if (!fs.existsSync(SDS_OUTPUT)) {\n    throw new Error(`SDS output not found: ${SDS_OUTPUT}`);\n  }\n\n  if (!fs.existsSync(SRS_FRAMEWORK_PATH)) {\n    throw new Error(`SRS framework not found: ${SRS_FRAMEWORK_PATH}`);\n  }\n\n  log('1/4', 'Inputs OK');\n\n  // STEP 2\n  log('2/4', 'Preparing SRS runner workspace');\n\n  fs.rmSync(RUNNER_WORK, {\n    recursive: true,\n    force: true\n  });\n\n  fs.mkdirSync(RUNNER_WORK, {\n    recursive: true\n  });\n\n  await runCommand(\n    'COPY-SOURCE',\n    `cp -R \"${COMPONENT_CHECKOUT_PATH}\" \"${RUNNER_COMPONENT_SOURCE}\"`,\n    SRS_FRAMEWORK_PATH\n  );\n\n  await runCommand(\n    'COPY-SDS',\n    `cp -R \"${SDS_OUTPUT}\" \"${RUNNER_SDS_OUTPUT}\"`,\n    SRS_FRAMEWORK_PATH\n  );\n\n  log('2/4', 'Component source and SDS copied');\n\n  // STEP 3\n  log('3/4', 'Starting SRS /scan-source');\n\n  const scanResult = await runCommand(\n    'SCAN-SOURCE',\n\n    `opencode run ` +\n    `\"/scan-source --path .runner-work/component-source ` +\n    `--sds-output .runner-work/sds-output ` +\n    `--output .runner-work/srs-output\" ` +\n    `--agent srs-re-lead-agent ` +\n    `--model \"ollama-cloud/${OLLAMA_MODEL}\"`,\n\n    SRS_FRAMEWORK_PATH\n  );\n\n  log(\n    '3/4',\n    `SRS source scan completed in ${scanResult.durationSeconds}s`\n  );\n\n  // STEP 4\n  log('4/4', 'Checking SRS scan output');\n\n  if (!fs.existsSync(SRS_OUTPUT)) {\n    throw new Error(`SRS output directory not created: ${SRS_OUTPUT}`);\n  }\n\n  const totalDuration =\n    ((Date.now() - nodeStart) / 1000).toFixed(1);\n\n  log('DONE', `SRS scan completed successfully in ${totalDuration}s`);\n\n  return [{\n    json: {\n      ...input,\n\n      reWorkspace: {\n        ...workspace,\n        srsRunnerWork: RUNNER_WORK,\n        srsOutputPath: SRS_OUTPUT\n      },\n\n      reProgress: {\n        ...(input.reProgress || {}),\n        srsScanCompleted: true,\n        srsGenerated: false\n      },\n\n      srsScanResult: {\n        status: 'success',\n        durationSeconds: Number(totalDuration)\n      }\n    }\n  }];\n\n} catch (error) {\n  log('FAILED', error.message);\n\n  return [{\n    json: {\n      ...input,\n      status: 'failed',\n      stage: 'srs-scan',\n      error: error.message || null,\n      stderr: error.stderr || null,\n      stdout: error.stdout || null,\n\n      reProgress: {\n        ...(input.reProgress || {}),\n        srsScanCompleted: false\n      }\n    }\n  }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3568,
+        4288
+      ],
+      "id": "dc8737ed-4d11-4232-a418-d6a0ef89243b",
+      "name": "SRS - Scan Source1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f8477568-6cd4-4696-9fc6-30135af34c22",
+              "leftValue": "={{\n  $json.reProgress?.workspacePrepared === true &&\n  $json.reProgress?.sdsScanCompleted === true &&\n  $json.reProgress?.sdsGenerated === true &&\n  $json.reProgress?.srsScanCompleted === true &&\n  $json.reProgress?.srsGenerated === true &&\n  $json.reProgress?.brsScanCompleted === true &&\n  $json.reProgress?.brsGenerated === true\n}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -2848,
+        4288
+      ],
+      "id": "e9ba02e2-837c-49cd-b6cb-1148d3c42be2",
+      "name": "Generation Successful?1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/dnext-technology/dnext-product-docs-test/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    title: 'docs: add reference documents for ' +\n      $('Prepare Files for GitHub2').first().json.componentName,\n\n    head: $('Prepare Files for GitHub2').first().json.branch,\n\n    base: $('Prepare Files for GitHub2').first().json.baseBranch,\n\n    body: 'Automatically generated SDS, SRS and BRS documents for ' +\n      $('Prepare Files for GitHub2').first().json.componentName\n  }\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -592,
+        4256
+      ],
+      "id": "f3a3ce4a-0dca-402f-88be-c406c04bae2e",
+      "name": "Create Pull Request1",
+      "executeOnce": true,
+      "credentials": {
+        "githubApi": {
+          "id": "RjbLWfjghp6eS9qR",
+          "name": "GitHub_product_docs_write"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst fs = require('fs');\nconst path = require('path');\n\nconst input = $input.first().json;\n\nconst documents = [\n  {\n    type: 'SDS',\n    result: input.sdsResult,\n    targetPath: input.referencePaths?.sds\n  },\n  {\n    type: 'SRS',\n    result: input.srsResult,\n    targetPath: input.referencePaths?.srs\n  },\n  {\n    type: 'BRS',\n    result: input.brsResult,\n    targetPath: input.referencePaths?.brs\n  }\n];\n\nconst output = [];\n\nfor (const doc of documents) {\n  if (doc.result?.status !== 'success') {\n    throw new Error(`${doc.type}: Generation successful değil.`);\n  }\n\n  const finalDocumentPath = doc.result.finalDocumentPath;\n\n  if (!finalDocumentPath) {\n    throw new Error(`${doc.type}: finalDocumentPath missing.`);\n  }\n\n  if (\n    !fs.existsSync(finalDocumentPath) ||\n    !fs.statSync(finalDocumentPath).isFile()\n  ) {\n    throw new Error(\n      `${doc.type}: Final document not found: ${finalDocumentPath}`\n    );\n  }\n\n  if (!doc.targetPath) {\n    throw new Error(`${doc.type}: GitHub targetPath missing.`);\n  }\n\n  const content = fs.readFileSync(finalDocumentPath, 'utf8');\n\n  if (!content.trim()) {\n    throw new Error(`${doc.type}: Final document empty.`);\n  }\n\n  output.push({\n    json: {\n      trackerId: input.trackerId,\n      auditId: input.auditId,\n      auditRunId: input.auditRunId,\n      executionId: input.executionId,\n\n      componentName: input.componentName,\n      componentType: input.componentType,\n\n      documentType: doc.type,\n      sourceFileName: path.basename(finalDocumentPath),\n      sourceFilePath: finalDocumentPath,\n      selectedSourceFile: doc.result.selectedSourceFile,\n\n      targetPath: doc.targetPath,\n      content,\n\n      targetDocsOwner: input.targetDocsOwner,\n      targetDocsRepository: input.targetDocsRepository,\n      targetDocsBranch: input.targetDocsBranch,\n      targetComponentFolder: input.targetComponentFolder,\n      publishBranch: input.publishBranch\n    }\n  });\n}\n\nreturn output;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2512,
+        4272
+      ],
+      "id": "00dc40bb-70bd-41eb-9519-9e99df8b23f4",
+      "name": "Collect RE Documents1"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nconst cfg = $('Parse Repository Input1').first().json;\n\nconst requiredTypes = ['SDS', 'SRS', 'BRS'];\n\nif (items.length !== 3) {\n  throw new Error(\n    `Expected 3 documents, received ${items.length}`\n  );\n}\n\nconst output = [];\n\nfor (const type of requiredTypes) {\n  const matches = items.filter(\n    item => item.json.documentType === type\n  );\n\n  if (matches.length !== 1) {\n    throw new Error(\n      `${type}: Expected exactly one document, found ${matches.length}`\n    );\n  }\n\n  const doc = matches[0].json;\n  const key = type.toLowerCase();\n\n  if (typeof doc.content !== 'string' || !doc.content.trim()) {\n    throw new Error(`${type}: Empty document`);\n  }\n\n  const expectedPath = cfg.referencePaths?.[key];\n\n  if (!expectedPath) {\n    throw new Error(`${type}: referencePaths.${key} missing`);\n  }\n\n  if (doc.targetPath !== expectedPath) {\n    throw new Error(\n      `${type}: Target path mismatch. ` +\n      `Expected: ${expectedPath}, received: ${doc.targetPath}`\n    );\n  }\n\n  const filePath = doc.targetPath;\n  const fileName = filePath.split('/').pop();\n\n  const expectedFileName = `${key}-${cfg.componentName}.md`;\n\n  if (fileName !== expectedFileName) {\n    throw new Error(\n      `${type}: Unexpected filename: ${fileName}`\n    );\n  }\n\n  output.push({\n    json: {\n      documentType: type,\n      fileName,\n\n      owner: cfg.targetDocsOwner,\n      repo: cfg.targetDocsRepository,\n\n      branch: cfg.publishBranch,\n      baseBranch: cfg.targetDocsBranch,\n\n      componentName: cfg.componentName,\n      componentType: cfg.componentType,\n      targetComponentFolder: cfg.targetComponentFolder,\n\n      filePath,\n      content: doc.content,\n\n      trackerId: doc.trackerId ?? cfg.trackerId,\n      auditId: doc.auditId ?? cfg.auditId,\n      auditRunId: doc.auditRunId ?? cfg.auditRunId,\n      executionId: doc.executionId ?? cfg.executionId\n    }\n  });\n}\n\nconsole.log('[PREPARE-GITHUB] Generated paths:');\n\nfor (const item of output) {\n  console.log(\n    `${item.json.documentType} -> ${item.json.filePath}`\n  );\n}\n\nreturn output;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2272,
+        4272
+      ],
+      "id": "6fe34563-c572-4f9a-bea2-6c622d181f72",
+      "name": "Prepare Files for GitHub2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1200,
+        4256
+      ],
+      "id": "16fe486c-c6d7-4de2-913e-64bc0e21c867",
+      "name": "Loop Over Documents"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst response = $input.first().json;\nconst pr = response.body ?? response;\n\nif (!pr.number || ![200, 201].includes(response.statusCode)) {\n  throw new Error('PR oluşturma doğrulanamadı.');\n}\n\nreturn [{\n  json: {\n    pr_number: pr.number,\n    pr_url: pr.html_url,\n    pr_status: 'CREATED'\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        4176
+      ],
+      "id": "50524c38-c952-4b32-a553-5d934b6ecfd4",
+      "name": "Prepare Created PR Result"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Parse Repository Input1').first().json.targetDocsOwner + '/' + $('Parse Repository Input1').first().json.targetDocsRepository + '/git/ref/heads/' + $('Parse Repository Input1').first().json.publishBranch }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -2032,
+        4144
+      ],
+      "id": "1998878f-97e0-4fcd-b3dd-a48243535d03",
+      "name": "Check Publish Branch Exists1",
+      "executeOnce": true,
+      "credentials": {
+        "githubApi": {
+          "id": "RjbLWfjghp6eS9qR",
+          "name": "GitHub_product_docs_write"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7037b513-92cf-4ee3-9e57-17a8c4d389cc",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1824,
+        4096
+      ],
+      "id": "a0f7d299-f907-4730-abf0-44e87b868e78",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7037b513-92cf-4ee3-9e57-17a8c4d389cc",
+              "leftValue": "={{ Array.isArray($json.body) && $json.body.length > 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -816,
+        4064
+      ],
+      "id": "2c326cf8-4248-4f00-ab3f-03505313ecfa",
+      "name": "Open PR Exists?1",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{\n  'https://api.github.com/repos/' +\n  $('Start').first().json.owner_firstItem +\n  '/' +\n  $('Start').first().json.repo_firstItem +\n  '/git/refs'\n}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=\n{{\n  JSON.stringify({\n    ref: 'refs/heads/' + $('Parse Repository Input1').first().json.publishBranch,\n    sha: $json.body.object.sha\n  })\n}}\n",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1456,
+        4048
+      ],
+      "id": "0c20ef2a-3fa9-45fc-8740-32a1f956eb9a",
+      "name": "Create Publish Branch1",
+      "executeOnce": true,
+      "credentials": {
+        "githubApi": {
+          "id": "RjbLWfjghp6eS9qR",
+          "name": "GitHub_product_docs_write"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst response = $input.first().json;\n\nif (response.statusCode !== 200) {\n  throw new Error('PR kontrolü başarısız.');\n}\n\nconst pr = response.body?.[0];\n\nif (!pr?.number) {\n  throw new Error('Mevcut PR bilgisi bulunamadı.');\n}\n\nreturn [{\n  json: {\n    pr_number: pr.number,\n    pr_url: pr.html_url,\n    pr_status: 'EXISTING'\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        4048
+      ],
+      "id": "3d28ec8c-1065-4820-b929-c555f9819dac",
+      "name": "Prepare Existing PR Result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f139c40d-c2c3-48a9-85e1-8cce5cda0215",
+              "name": "status",
+              "value": "SUCCESS",
+              "type": "string"
+            },
+            {
+              "id": "a5087034-76c8-4276-8045-ed6cf5ec3118",
+              "name": "last_stage",
+              "value": "COMPLETED",
+              "type": "string"
+            },
+            {
+              "id": "2211a81b-d67d-4600-9de5-03f83587d2e9",
+              "name": "last_success_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "09143c56-e097-4f24-a956-3058b4850fbb",
+              "name": "last_error",
+              "value": "={{ '' }}",
+              "type": "string"
+            },
+            {
+              "id": "308e1f9e-8fc5-4553-adff-26f40b9a3950",
+              "name": "pr_number",
+              "value": "={{ $json.pr_number }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        16,
+        4048
+      ],
+      "id": "69dba726-9c80-4b28-b81f-442d382d58c0",
+      "name": "Prepare Tracker Success Update"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_component_tracker",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=id",
+              "condition": "=eq",
+              "keyValue": "={{ $('Restore Component Input').first().json.trackerId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        256,
+        4048
+      ],
+      "id": "40f11496-566e-4db0-928d-151477e7110b",
+      "name": "Tracker - Set Success"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fbdb4e48-62ab-40bb-9a8e-988834227f9c",
+              "name": "status",
+              "value": "SUCCESS",
+              "type": "string"
+            },
+            {
+              "id": "6bc0ec46-0672-40d3-84e5-af4587a79cab",
+              "name": "finished_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "cf98ac4e-b886-4e3a-8cc2-4f67c39ca6de",
+              "name": "pr_number",
+              "value": "={{ $('Prepare Tracker Success Update').first().json.pr_number }}",
+              "type": "number"
+            },
+            {
+              "id": "86d415d8-d3a3-4c97-b1fc-fe709f8b1252",
+              "name": "failed_stage",
+              "value": "={{ '' }}",
+              "type": "string"
+            },
+            {
+              "id": "42080df2-51ba-4ec9-be24-979b3eaa8310",
+              "name": "error_message",
+              "value": "={{ '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e2c5a59c-f230-4cc9-919f-951751ba9102",
+              "name": "sds_duration_sec",
+              "value": "={{ $('SDS - Generate1').first().json.sdsResult.generationDurationSeconds }}",
+              "type": "number"
+            },
+            {
+              "id": "19d85c8a-1c0e-410a-9259-bb14965fc3ed",
+              "name": "srs_duration_sec",
+              "value": "={{ $('SRS - Generate1').first().json.srsResult.generationDurationSeconds }}",
+              "type": "string"
+            },
+            {
+              "id": "04f17efd-487a-498b-9132-01efaba7621c",
+              "name": "brs_duration_sec",
+              "value": "={{ $('BRS - Generate1').first().json.brsResult.generationDurationSeconds }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        4048
+      ],
+      "id": "9b35ea54-91ca-48f6-84e5-481c2df74808",
+      "name": "Prepare Audit Success Update"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_generation_audit",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=id",
+              "condition": "=eq",
+              "keyValue": "={{ $('Restore Component Input').first().json.trackerId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        4048
+      ],
+      "id": "c87f3ee6-f585-4715-beb0-3b8adfaae02f",
+      "name": "Audit - Set Success"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { spawn } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst input = $json || {};\nconst workspace = input.reWorkspace || {};\n\nconst ROOT_DIR = workspace.rootDir;\nconst COMPONENT_CHECKOUT_PATH = workspace.componentCheckoutPath;\nconst SDS_FRAMEWORK_PATH = workspace.sdsFrameworkPath;\nconst OLLAMA_MODEL = workspace.ollamaModel;\n\nif (!ROOT_DIR) throw new Error('reWorkspace.rootDir missing');\nif (!COMPONENT_CHECKOUT_PATH) throw new Error('componentCheckoutPath missing');\nif (!SDS_FRAMEWORK_PATH) throw new Error('sdsFrameworkPath missing');\nif (!OLLAMA_MODEL) throw new Error('ollamaModel missing');\n\nconst RUNNER_WORK =\n  path.join(SDS_FRAMEWORK_PATH, '.runner-work');\n\nconst RUNNER_COMPONENT_SOURCE =\n  path.join(RUNNER_WORK, 'component-source');\n\nconst SDS_OUTPUT =\n  path.join(RUNNER_WORK, 'sds-output');\n\n\nfunction log(stage, message) {\n  console.log(\n    `[${new Date().toISOString()}] [SDS-SCAN] [${stage}] ${message}`\n  );\n}\n\n\nasync function runCommand(label, command, cwd) {\n\n  return new Promise((resolve, reject) => {\n\n    const start = Date.now();\n\n    log(label, 'START');\n    log(label, `cwd=${cwd}`);\n\n    const child = spawn(\n      '/bin/sh',\n      ['-c', command],\n      {\n        cwd,\n        stdio: ['ignore', 'pipe', 'pipe']\n      }\n    );\n\n    let stdout = '';\n    let stderr = '';\n\n    child.stdout.on('data', data => {\n\n      const text = data.toString();\n      stdout += text;\n\n      for (const line of text.split('\\n')) {\n        if (line.trim()) {\n          log(label, `OUT: ${line}`);\n        }\n      }\n\n    });\n\n    child.stderr.on('data', data => {\n\n      const text = data.toString();\n      stderr += text;\n\n      for (const line of text.split('\\n')) {\n        if (line.trim()) {\n          log(label, `ERR: ${line}`);\n        }\n      }\n\n    });\n\n    child.on('error', error => {\n\n      error.stdout = stdout;\n      error.stderr = stderr;\n\n      reject(error);\n\n    });\n\n    child.on('close', code => {\n\n      const duration =\n        ((Date.now() - start) / 1000).toFixed(1);\n\n      log(\n        label,\n        `END code=${code} duration=${duration}s`\n      );\n\n      if (code === 0) {\n\n        resolve({\n          stdout,\n          stderr,\n          durationSeconds: Number(duration)\n        });\n\n      } else {\n\n        const error =\n          new Error(`${label} failed with exit code ${code}`);\n\n        error.stdout = stdout;\n        error.stderr = stderr;\n\n        reject(error);\n\n      }\n\n    });\n\n  });\n\n}\n\n\ntry {\n\n  const nodeStart = Date.now();\n\n  // --------------------------------------------------\n  // STEP 1\n  // --------------------------------------------------\n\n  log('1/3', 'Validating workspace');\n\n  if (!fs.existsSync(COMPONENT_CHECKOUT_PATH)) {\n    throw new Error(\n      `Component source not found: ${COMPONENT_CHECKOUT_PATH}`\n    );\n  }\n\n  if (!fs.existsSync(SDS_FRAMEWORK_PATH)) {\n    throw new Error(\n      `SDS framework not found: ${SDS_FRAMEWORK_PATH}`\n    );\n  }\n\n  log('1/3', 'Workspace OK');\n\n\n  // --------------------------------------------------\n  // STEP 2\n  // --------------------------------------------------\n\n  log('2/3', 'Preparing .runner-work');\n\n  fs.rmSync(\n    RUNNER_WORK,\n    {\n      recursive: true,\n      force: true\n    }\n  );\n\n  fs.mkdirSync(\n    RUNNER_WORK,\n    {\n      recursive: true\n    }\n  );\n\n  await runCommand(\n    'COPY-SOURCE',\n    `cp -R \"${COMPONENT_CHECKOUT_PATH}\" \"${RUNNER_COMPONENT_SOURCE}\"`,\n    SDS_FRAMEWORK_PATH\n  );\n\n  log('2/3', 'Component source copied');\n\n\n  // --------------------------------------------------\n  // STEP 3\n  // --------------------------------------------------\n\n  log('3/3', 'Starting /scan-source');\n\n  const scanResult = await runCommand(\n\n    'SCAN-SOURCE',\n\n    `opencode run ` +\n    `\"/scan-source --path .runner-work/component-source --output .runner-work/sds-output\" ` +\n    `--agent sds-re-lead-agent ` +\n    `--model \"ollama-cloud/${OLLAMA_MODEL}\"`,\n\n    SDS_FRAMEWORK_PATH\n\n  );\n\n\n  const totalDuration =\n    ((Date.now() - nodeStart) / 1000).toFixed(1);\n\n  log(\n    'DONE',\n    `SDS scan completed in ${totalDuration}s`\n  );\n\n\n  return [{\n    json: {\n\n      ...input,\n\n      reWorkspace: {\n        ...workspace,\n\n        sdsRunnerWork: RUNNER_WORK,\n        sdsOutputPath: SDS_OUTPUT\n      },\n\n      reProgress: {\n        ...(input.reProgress || {}),\n        sdsScanCompleted: true,\n        sdsGenerated: false\n      },\n\n      sdsScanResult: {\n        status: 'success',\n        durationSeconds: Number(totalDuration)\n      }\n\n    }\n  }];\n\n\n} catch (error) {\n\n  log('FAILED', error.message);\n\n  return [{\n    json: {\n\n      ...input,\n\n      status: 'failed',\n      stage: 'sds-scan',\n\n      error: error.message || null,\n      stderr: error.stderr || null,\n      stdout: error.stdout || null,\n\n      reProgress: {\n        ...(input.reProgress || {}),\n        sdsScanCompleted: false\n      }\n\n    }\n  }];\n\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2400,
+        4016
+      ],
+      "id": "a5a6b415-4e76-4437-8dc7-e0144d1f1408",
+      "name": "SDS - Scan Source1"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst { spawn } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst input = $input.first().json;\nconst workspace = input.reWorkspace || {};\n\nconst FRAMEWORK = workspace.sdsFrameworkPath;\nconst OUTPUT = workspace.sdsOutputPath;\nconst MODEL = workspace.ollamaModel;\n\nfunction log(stage, message) {\n  console.log(\n    `[${new Date().toISOString()}] [SDS-GENERATE] [${stage}] ${message}`\n  );\n}\n\nfunction listMarkdown(root) {\n  const files = [];\n\n  function walk(dir) {\n    for (const entry of fs.readdirSync(dir, {\n      withFileTypes: true\n    })) {\n      const full = path.join(dir, entry.name);\n\n      if (entry.isDirectory()) {\n        walk(full);\n      } else if (\n        entry.isFile() &&\n        entry.name.toLowerCase().endsWith('.md')\n      ) {\n        files.push(path.relative(root, full));\n      }\n    }\n  }\n\n  walk(root);\n  return files;\n}\n\n\nfunction selectDocument(files) {\n  const normalized = files.map(file => ({\n    original: file,\n    relative: file.replace(/\\\\/g, '/').toLowerCase(),\n    name: path.basename(file).toLowerCase()\n  }));\n\n  // 1. Öncelik: final/ klasöründeki gerçek SDS adayları\n  const finalFolderCandidates = normalized.filter(item =>\n    item.relative.split('/').includes('final') &&\n    /^sds(?:-re|-document|-final|-master|-complete)?\\.md$/.test(item.name)\n  );\n\n  if (finalFolderCandidates.length === 1) {\n    return finalFolderCandidates[0].original;\n  }\n\n  if (finalFolderCandidates.length > 1) {\n    throw new Error(\n      'Multiple SDS documents in final folder: ' +\n      JSON.stringify(finalFolderCandidates.map(x => x.original))\n    );\n  }\n\n  // 2. Öncelik: Bilinen nihai dosya isimleri\n  const priority = [\n    'sds-re-document.md',\n    'sds.md',\n    'sds-final.md',\n    'sds-master.md',\n    'sds-re.md',\n    'sds-re-complete.md',\n    'sds-complete.md'\n  ];\n\n  for (const expected of priority) {\n    const matches = normalized.filter(item =>\n      item.name === expected &&\n      !item.relative.split('/').includes('sections')\n    );\n\n    if (matches.length === 1) {\n      return matches[0].original;\n    }\n\n    if (matches.length > 1) {\n      throw new Error(\n        `Multiple SDS candidates: ${expected}`\n      );\n    }\n  }\n\n  // 3. Öncelik: Yardımcı dosyaları ele\n  const candidates = normalized.filter(item => {\n    const name = item.name;\n    const parts = item.relative.split('/');\n\n    if (parts.includes('sections')) return false;\n\n    if (/^(section-|\\d{2}-)/.test(name)) return false;\n\n    const excluded = [\n      'manifest',\n      'report',\n      'summary',\n      'scan',\n      'quality',\n      'handoff',\n      'boundary',\n      'code-structure',\n      'project-context',\n      'tracker',\n      'progress'\n    ];\n\n    if (excluded.some(word => name.includes(word))) {\n      return false;\n    }\n\n    return name.startsWith('sds');\n  });\n\n  if (candidates.length === 1) {\n    return candidates[0].original;\n  }\n\n  throw new Error(\n    'SDS final document could not be identified. ' +\n    JSON.stringify({\n      candidates: candidates.map(x => x.original),\n      allFiles: files\n    })\n  );\n}\n\n\nfunction runGeneration() {\n  return new Promise((resolve, reject) => {\n    const started = Date.now();\n    let settled = false;\n\n    const child = spawn('opencode', [\n      'run',\n      '--continue',\n      '/generate-re-sds --interactive=false',\n      '--agent',\n      'sds-re-lead-agent',\n      '--model',\n      `ollama-cloud/${MODEL}`\n    ], {\n      cwd: FRAMEWORK,\n      stdio: ['ignore', 'pipe', 'pipe']\n    });\n\n    let stdout = '';\n    let stderr = '';\n\n    child.stdout.on('data', data => {\n      const text = data.toString();\n      stdout += text;\n      console.log(text);\n    });\n\n    child.stderr.on('data', data => {\n      const text = data.toString();\n      stderr += text;\n      console.log(text);\n    });\n\n    child.on('error', error => {\n      if (settled) return;\n      settled = true;\n      error.stdout = stdout;\n      error.stderr = stderr;\n      reject(error);\n    });\n\n    child.on('close', code => {\n      if (settled) return;\n      settled = true;\n\n      if (code !== 0) {\n        const error = new Error(\n          `SDS generation failed: exit code ${code}`\n        );\n        error.stdout = stdout;\n        error.stderr = stderr;\n        reject(error);\n        return;\n      }\n\n      resolve({\n        durationSeconds: Number(\n          ((Date.now() - started) / 1000).toFixed(1)\n        )\n      });\n    });\n  });\n}\n\ntry {\n  if (input.status === 'failed') {\n    throw new Error(\n      `Previous stage failed: ${input.stage}: ${input.error}`\n    );\n  }\n\n  if (!FRAMEWORK || !fs.existsSync(FRAMEWORK)) {\n    throw new Error('SDS framework path missing');\n  }\n\n  if (!OUTPUT || !fs.existsSync(OUTPUT)) {\n    throw new Error('SDS output path missing');\n  }\n\n  if (!MODEL) throw new Error('Ollama model missing');\n\n  if (input.reProgress?.sdsScanCompleted !== true) {\n    throw new Error('SDS scan not completed');\n  }\n\n  const started = Date.now();\n\n  const before = new Map(\n    listMarkdown(OUTPUT).map(file => {\n      const stat = fs.statSync(path.join(OUTPUT, file));\n      return [file, `${stat.size}:${stat.mtimeMs}`];\n    })\n  );\n\n  log('GENERATE', 'Starting SDS generation');\n\n  const generation = await runGeneration();\n\n  const markdownFiles = listMarkdown(OUTPUT);\n\n  const selectedSourceFile = selectDocument(markdownFiles);\n  const sourcePath = path.join(OUTPUT, selectedSourceFile);\n\n  const stat = fs.statSync(sourcePath);\n  \n  if (!stat.isFile() || stat.size === 0) {\n    throw new Error('SDS final document is missing or empty');\n  }\n  \n  const documentWasUpdated =\n    before.get(selectedSourceFile) !==\n    `${stat.size}:${stat.mtimeMs}`;\n  \n  log(\n    'VALIDATE',\n    `Selected=${selectedSourceFile}, updated=${documentWasUpdated}`\n  );\n\n  const content = fs.readFileSync(sourcePath, 'utf8');\n\n  if (!content.trim()) {\n    throw new Error('SDS final document is empty');\n  }\n\n  const finalDocumentPath = path.join(\n    OUTPUT,\n    'sds-final.md'\n  );\n\n  if (path.resolve(sourcePath) !== path.resolve(finalDocumentPath)) {\n    fs.copyFileSync(sourcePath, finalDocumentPath);\n  }\n\n  const totalDurationSeconds = Number(\n    ((Date.now() - started) / 1000).toFixed(1)\n  );\n\n  log('DONE', `Selected: ${selectedSourceFile}`);\n\n  return [{\n    json: {\n      ...input,\n      status: 'success',\n      stage: 'sds-generate',\n      error: null,\n      reProgress: {\n        ...(input.reProgress || {}),\n        sdsGenerated: true\n      },\n      sdsResult: {\n        status: 'success',\n        generationDurationSeconds: generation.durationSeconds,\n        totalDurationSeconds,\n        outputPath: OUTPUT,\n        markdownFiles,\n        selectedSourceFile,\n        finalDocumentPath\n      }\n    }\n  }];\n\n} catch (error) {\n  log('FAILED', error.message);\n\n  return [{\n    json: {\n      ...input,\n      status: 'failed',\n      stage: 'sds-generate',\n      error: error.message,\n      stderr: error.stderr || null,\n      stdout: error.stdout || null,\n      reProgress: {\n        ...(input.reProgress || {}),\n        sdsGenerated: false\n      },\n      sdsResult: {\n        status: 'failed',\n        error: error.message\n      }\n    }\n  }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2256,
+        4016
+      ],
+      "id": "2e70b6d9-99d8-433b-b035-5dfa9f5bbebf",
+      "name": "SDS - Generate1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { spawn } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\nconst os = require('os');\n\n\n// ============================================================\n// INPUT\n// ============================================================\n\nconst input = $json || {};\n\nconst COMPONENT_NAME = input.componentName;\nconst REPO_OWNER = input.repositoryOwner;\nconst REPO_NAME = input.repositoryName;\nconst SOURCE_BRANCH = input.sourceBranch;\n\n\n// ============================================================\n// SECRETS\n// ============================================================\n\n// TEST SÜRECİNDE ÇALIŞAN TOKEN'I BURAYA KULLANIYORSAN\n// mevcut çalışan yapını koru.\n//\n// Production'da tekrar $env'e taşınacak.\nconst COMPONENT_REPO_TOKEN =        $env.GITHUB_PAT_COMPONENT_REPO ||\n  input.COMPONENT_REPO_TOKEN;\nconst COGNIA_REPO_TOKEN = \n  $env.GITHUB_PAT_COGNIA ||\n  input.COGNIA_REPO_TOKEN;\n\nconst OLLAMA_API_KEY =\n  $env.OLLAMA_API_KEY ||\n  input.OLLAMA_API_KEY;\n\nif (!COMPONENT_REPO_TOKEN) {\n  throw new Error('COMPONENT_REPO_TOKEN missing');\n}\n\nif (!COGNIA_REPO_TOKEN) {\n  throw new Error('COGNIA_REPO_TOKEN missing');\n}\n\nif (!OLLAMA_API_KEY) {\n  throw new Error('OLLAMA_API_KEY missing');\n}\n\n\n// ============================================================\n// MODEL\n// ============================================================\n\nconst OLLAMA_MODEL = 'kimi-k2.7-code';\n\n\n// ============================================================\n// WORKSPACE\n// ============================================================\n\nconst RUN_ID = Date.now();\n\nconst ROOT_DIR =\n  path.join('/tmp', `cognia-run-${RUN_ID}`);\n\nconst COMPONENT_CHECKOUT_PATH =\n  path.join(ROOT_DIR, 'workspace', 'component-source');\n\nconst COGNIA_REPO_PATH =\n  path.join(ROOT_DIR, 'workspace', 'dnext-ai-rnd');\n\nconst SDS_FRAMEWORK_PATH =\n  path.join(COGNIA_REPO_PATH, 'Cognia-RE', 'SDS-RE');\n\nconst SRS_FRAMEWORK_PATH =\n  path.join(COGNIA_REPO_PATH, 'Cognia-RE', 'SRS-RE');\n\nconst BRS_FRAMEWORK_PATH =\n  path.join(COGNIA_REPO_PATH, 'Cognia-RE', 'BRS-RE');\n\n\nfs.mkdirSync(\n  path.join(ROOT_DIR, 'workspace'),\n  { recursive: true }\n);\n\n\n// ============================================================\n// COMMAND RUNNER\n// ============================================================\n\nasync function runCommand(command, workingDir = ROOT_DIR) {\n\n  return new Promise((resolve, reject) => {\n\n    console.log(`[START] ${command}`);\n\n    const child = spawn(\n      '/bin/sh',\n      ['-c', command],\n      {\n        cwd: workingDir,\n        stdio: ['ignore', 'pipe', 'pipe']\n      }\n    );\n\n    let stdout = '';\n    let stderr = '';\n\n    child.stdout.on('data', (data) => {\n\n      const text = data.toString();\n\n      stdout += text;\n\n      console.log(`[STDOUT] ${text.trim()}`);\n\n    });\n\n    child.stderr.on('data', (data) => {\n\n      const text = data.toString();\n\n      stderr += text;\n\n      console.log(`[STDERR] ${text.trim()}`);\n\n    });\n\n    child.on('error', (error) => {\n\n      error.stdout = stdout;\n      error.stderr = stderr;\n\n      reject(error);\n\n    });\n\n    child.on('close', (code) => {\n\n      console.log(`[END] Exit code: ${code}`);\n\n      if (code === 0) {\n\n        resolve(stdout);\n\n        return;\n\n      }\n\n      const error =\n        new Error(`Command failed with exit code ${code}`);\n\n      error.stdout = stdout;\n      error.stderr = stderr;\n\n      reject(error);\n\n    });\n\n  });\n\n}\n\n\n// ============================================================\n// AUTH HEADER\n// ============================================================\n\nfunction gitAuthHeader(token) {\n\n  const basic = Buffer\n    .from(`x-access-token:${token}`)\n    .toString('base64');\n\n  return `Authorization: Basic ${basic}`;\n\n}\n\n\n// ============================================================\n// SECRET REDACTION\n// ============================================================\n\nfunction redactSecrets(value) {\n\n  if (!value) return value;\n\n  let result = String(value);\n\n  const secrets = [\n    COMPONENT_REPO_TOKEN,\n    COGNIA_REPO_TOKEN,\n    OLLAMA_API_KEY\n  ];\n\n  for (const secret of secrets) {\n\n    if (!secret) continue;\n\n    result =\n      result.split(secret).join('[REDACTED]');\n\n    const encoded =\n      Buffer\n        .from(`x-access-token:${secret}`)\n        .toString('base64');\n\n    result =\n      result.split(encoded).join('[REDACTED]');\n\n  }\n\n  return result;\n\n}\n\n\n// ============================================================\n// MAIN\n// ============================================================\n\ntry {\n\n  console.log('=== PREPARE WORKSPACE ===');\n\n\n  // ----------------------------------------------------------\n  // COMPONENT REPOSITORY\n  // ----------------------------------------------------------\n\n  console.log('=== Clone component repository ===');\n\n  const componentAuthHeader =\n    gitAuthHeader(COMPONENT_REPO_TOKEN);\n\n  await runCommand(\n    `git -c http.extraHeader=\"${componentAuthHeader}\" ` +\n    `clone --depth 1 --branch \"${SOURCE_BRANCH}\" ` +\n    `\"https://github.com/${REPO_OWNER}/${REPO_NAME}.git\" ` +\n    `\"${COMPONENT_CHECKOUT_PATH}\"`\n  );\n\n\n  // ----------------------------------------------------------\n  // COGNIA REPOSITORY\n  // ----------------------------------------------------------\n\n  console.log('=== Clone Cognia repository ===');\n\n  const cogniaAuthHeader =\n    gitAuthHeader(COGNIA_REPO_TOKEN);\n\n  await runCommand(\n    `git -c http.extraHeader=\"${cogniaAuthHeader}\" ` +\n    `clone --depth 1 --branch \"develop\" ` +\n    `\"https://github.com/dnext-cognia/dnext-ai-rnd.git\" ` +\n    `\"${COGNIA_REPO_PATH}\"`\n  );\n\n\n  // ----------------------------------------------------------\n  // FRAMEWORK VALIDATION\n  // ----------------------------------------------------------\n\n  console.log('=== Validate Cognia frameworks ===');\n\n  const requiredPaths = [\n\n    SDS_FRAMEWORK_PATH,\n    SRS_FRAMEWORK_PATH,\n    BRS_FRAMEWORK_PATH,\n\n    path.join(\n      SDS_FRAMEWORK_PATH,\n      '.opencode',\n      'agents',\n      'sds-re-lead-agent.md'\n    ),\n\n    path.join(\n      SRS_FRAMEWORK_PATH,\n      '.opencode',\n      'agents',\n      'srs-re-lead-agent.md'\n    ),\n\n    path.join(\n      BRS_FRAMEWORK_PATH,\n      '.opencode',\n      'agents',\n      'brs-re-lead-agent.md'\n    )\n\n  ];\n\n\n  for (const requiredPath of requiredPaths) {\n\n    if (!fs.existsSync(requiredPath)) {\n\n      throw new Error(\n        `Required Cognia path not found: ${requiredPath}`\n      );\n\n    }\n\n  }\n\n\n  // ----------------------------------------------------------\n  // OPENCODE CONFIG\n  // ----------------------------------------------------------\n\n  console.log('=== Configure OpenCode ===');\n\n  const configDir =\n    path.join(\n      os.homedir(),\n      '.config',\n      'opencode'\n    );\n\n  fs.mkdirSync(\n    configDir,\n    { recursive: true }\n  );\n\n\n  const opencodeConfig = {\n\n    \"$schema\":\n      \"https://opencode.ai/config.json\",\n\n    \"model\":\n      `ollama-cloud/${OLLAMA_MODEL}`,\n\n    \"provider\": {\n\n      \"ollama-cloud\": {\n\n        \"npm\":\n          \"@ai-sdk/openai-compatible\",\n\n        \"name\":\n          \"Ollama Cloud\",\n\n        \"options\": {\n\n          \"baseURL\":\n            \"https://ollama.com/v1\",\n\n          \"apiKey\":\n            OLLAMA_API_KEY\n\n        },\n\n        \"models\": {\n\n          [OLLAMA_MODEL]: {\n            \"name\": OLLAMA_MODEL\n          }\n\n        }\n\n      }\n\n    }\n\n  };\n\n\n  fs.writeFileSync(\n    path.join(\n      configDir,\n      'opencode.json'\n    ),\n    JSON.stringify(\n      opencodeConfig,\n      null,\n      2\n    )\n  );\n\n\n  console.log('=== Workspace ready ===');\n\n\n  // ==========================================================\n  // OUTPUT\n  // ==========================================================\n\n  return [{\n    json: {\n\n      ...input,\n\n      reWorkspace: {\n\n        rootDir:\n          ROOT_DIR,\n\n        componentCheckoutPath:\n          COMPONENT_CHECKOUT_PATH,\n\n        cogniaRepoPath:\n          COGNIA_REPO_PATH,\n\n        sdsFrameworkPath:\n          SDS_FRAMEWORK_PATH,\n\n        srsFrameworkPath:\n          SRS_FRAMEWORK_PATH,\n\n        brsFrameworkPath:\n          BRS_FRAMEWORK_PATH,\n\n        ollamaModel:\n          OLLAMA_MODEL\n\n      },\n\n      reProgress: {\n        workspacePrepared: true,\n        sdsGenerated: false,\n        srsGenerated: false,\n        brsGenerated: false\n      }\n\n    }\n  }];\n\n\n} catch (error) {\n\n  return [{\n    json: {\n\n      status: 'failed',\n\n      stage: 'prepare-workspace',\n\n      error:\n        redactSecrets(error.message),\n\n      stderr:\n        redactSecrets(error.stderr),\n\n      stdout:\n        redactSecrets(error.stdout)\n\n    }\n  }];\n\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2560,
+        4016
+      ],
+      "id": "af80db43-e11b-46e8-a871-a0253847437e",
+      "name": "Prepare RE Workspace1"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst input = $input.first().json;\n\n// --------------------------------------------------\n// 1. Component bilgileri - Data Table\n// --------------------------------------------------\n\nconst trackerId = input.id;\n\nconst componentName = String(\n  input.component_name ??\n  input.componentName ??\n  input[\"Component Full Name\"] ??\n  \"\"\n).trim();\n\nconst repositoryOwner = String(\n  input.repository_owner ??\n  input.repositoryOwner ??\n  \"\"\n).trim();\n\nconst repositoryName = String(\n  input.repository_name ??\n  input.repositoryName ??\n  \"\"\n).trim();\n\nconst sourceBranch = String(\n  input.source_branch ??\n  input.sourceBranch ??\n  input[\"Source Branch\"] ??\n  \"develop\"\n).trim();\n\nconst componentType = String(\n  input.component_type ??\n  \"BE\"\n).trim().toUpperCase();\n\nconst targetComponentFolder = String(\n  input.target_component_folder ??\n  input.targetComponentFolder ??\n  input[\"Product Docs Component Folder\"] ??\n  \"\"\n).trim();\n\n// --------------------------------------------------\n// 2. Validations\n// --------------------------------------------------\n\nif (trackerId === undefined || trackerId === null) {\n  throw new Error(\"Tracker row ID bulunamadı.\");\n}\n\nif (!componentName) {\n  throw new Error(\"component_name boş olamaz.\");\n}\n\nif (!repositoryOwner || !repositoryName) {\n  throw new Error(\"Repository owner/name boş olamaz.\");\n}\n\nif (!targetComponentFolder) {\n  throw new Error(\"target_component_folder boş olamaz.\");\n}\n\nconst safeNamePattern = /^[a-zA-Z0-9._-]+$/;\nconst safeBranchPattern = /^[a-zA-Z0-9._/-]+$/;\n\nif (!safeNamePattern.test(componentName)) {\n  throw new Error(\"Geçersiz component_name.\");\n}\n\nif (!safeNamePattern.test(repositoryOwner) ||\n    !safeNamePattern.test(repositoryName)) {\n  throw new Error(\"Geçersiz repository bilgileri.\");\n}\n\nif (!safeBranchPattern.test(sourceBranch)) {\n  throw new Error(\"Geçersiz source_branch.\");\n}\n\nif (!safeBranchPattern.test(targetComponentFolder)) {\n  throw new Error(\"Geçersiz target_component_folder.\");\n}\n\nif (![\"BE\", \"FE\"].includes(componentType)) {\n  throw new Error(\"component_type BE veya FE olmalı.\");\n}\n\n// --------------------------------------------------\n// 3. Repository URL\n// --------------------------------------------------\n\nconst repositoryUrl =\n  `https://github.com/${repositoryOwner}/${repositoryName}`;\n\n// --------------------------------------------------\n// 4. GitHub target\n// --------------------------------------------------\n\nconst targetDocsOwner = \"dnext-technology\";\nconst targetDocsRepository = \"dnext-product-docs-test\";\nconst targetDocsBranch = \"develop\";\n\n// --------------------------------------------------\n// 5. Dynamic document names\n// --------------------------------------------------\n\nconst documentNames = {\n  sds: `sds-${componentName}.md`,\n  srs: `srs-${componentName}.md`,\n  brs: `brs-${componentName}.md`\n};\n\n// --------------------------------------------------\n// 6. Output\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      trackerId,\n      componentName,\n      componentType,\n\n      repositoryUrl,\n      repositoryOwner,\n      repositoryName,\n      sourceBranch,\n\n      sourceCommitSha: input.source_commit_sha || \"\",\n      currentCommitSha: input.current_commit_sha || \"\",\n\n      targetDocsOwner,\n      targetDocsRepository,\n      targetDocsBranch,\n      targetComponentFolder,\n\n      publishBranch: `docs/reference-${componentName}`,\n\n      instructionPaths: {\n        brs: `${targetComponentFolder}/BRS/README.md`,\n        srs: `${targetComponentFolder}/SRS/README.md`,\n        sds: `${targetComponentFolder}/SDS/README.md`\n      },\n\n      referencePaths: {\n        brs: `${targetComponentFolder}/BRS/Reference/${documentNames.brs}`,\n        srs: `${targetComponentFolder}/SRS/Reference/${documentNames.srs}`,\n        sds: `${targetComponentFolder}/SDS/Reference/${documentNames.sds}`\n      },\n\n      documentNames\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3568,
+        4016
+      ],
+      "id": "2d22b72b-cf64-4ce2-8318-fd0c25eed48d",
+      "name": "Parse Repository Input1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_component_tracker",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=id",
+              "condition": "=eq",
+              "keyValue": "={{ $('Parse Repository Input1').first().json.trackerId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -3168,
+        4016
+      ],
+      "id": "6190b353-5f88-4d3a-beff-3145321a1df9",
+      "name": "Tracker - Set Running"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "40ab4b48-1cbb-4ee0-b417-d4fa2064a509",
+              "name": "status",
+              "value": "RUNNING",
+              "type": "string"
+            },
+            {
+              "id": "c8bdf575-c187-47e7-8afc-14e93dc43a5f",
+              "name": "last_stage",
+              "value": "STARTED",
+              "type": "string"
+            },
+            {
+              "id": "f1b1b06e-2af0-4d18-8d6e-ad4f5771638f",
+              "name": "last_run_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "cbdbea15-90ba-453b-b353-91ec6a92ec3e",
+              "name": "last_error",
+              "value": "={{ '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3360,
+        4016
+      ],
+      "id": "5e2bef92-1e3a-45e3-8d7b-f4c6b29bab00",
+      "name": "Prepare Tracker Running Update"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "cognia_re_generation_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -2864,
+        4016
+      ],
+      "id": "46f4e6ff-7b7a-4feb-9067-1e08c3c2eae7",
+      "name": "Audit - Start Run"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "767e426a-1fc8-4e3c-8841-93b8c7e4c1d0",
+              "name": "run_id",
+              "value": "={{ String($execution.id) + '-' + $('Parse Repository Input1').first().json.trackerId }}",
+              "type": "string"
+            },
+            {
+              "id": "19644d17-1492-4539-af07-737490dd44eb",
+              "name": "component_name",
+              "value": "={{ $('Parse Repository Input1').first().json.componentName }}",
+              "type": "string"
+            },
+            {
+              "id": "3c725839-a1aa-4311-ac66-4664009ac3d0",
+              "name": "source_commit_sha",
+              "value": "={{ $('Parse Repository Input1').first().json.currentCommitSha || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "5bb3a06d-a87f-4976-9627-8bcb6cf42bb8",
+              "name": "status",
+              "value": "RUNNING",
+              "type": "string"
+            },
+            {
+              "id": "a05021c4-3059-4961-be91-cf11e64e4812",
+              "name": "started_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "3318313d-b9d3-44e0-96ba-e07884dd50c9",
+              "name": "execution_id",
+              "value": "={{ String($execution.id) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2992,
+        4016
+      ],
+      "id": "d8b6e19b-c15d-4d77-ad52-337189b9cd49",
+      "name": "Prepare Audit Start"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst component = $('Parse Repository Input1').first().json;\nconst audit = $input.first().json;\n\nif (!audit.id) {\n  throw new Error('Audit ID bulunamadı.');\n}\n\nreturn [\n  {\n    json: {\n      ...component,\n\n      auditId: audit.id,\n      auditRunId: audit.run_id,\n      executionId: audit.execution_id\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2704,
+        4016
+      ],
+      "id": "44eb0de4-7682-47a0-a8c8-43eb75a0f71a",
+      "name": "Restore Component Input"
+    },
+    {
+      "parameters": {
+        "url": "=\n{{ 'https://api.github.com/repos/' + $('Parse Repository Input1').first().json.targetDocsOwner + '/' + $('Parse Repository Input1').first().json.targetDocsRepository + '/git/ref/heads/' + $('Parse Repository Input1').first().json.targetDocsBranch }}\n",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1648,
+        4000
+      ],
+      "id": "2a59422d-8997-48ad-a299-8f54a0d9a51c",
+      "name": "Get Base Branch SHA1",
+      "executeOnce": true,
+      "credentials": {
+        "githubApi": {
+          "id": "RjbLWfjghp6eS9qR",
+          "name": "GitHub_product_docs_write"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/dnext-technology/dnext-product-docs-test/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "open"
+            },
+            {
+              "name": "base",
+              "value": "develop"
+            },
+            {
+              "name": "head",
+              "value": "={{ $('Prepare Files for GitHub2').first().json.owner + ':' + $('Prepare Files for GitHub2').first().json.branch }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1040,
+        3936
+      ],
+      "id": "a30b2f4d-989a-4914-96e2-2a72848d9748",
+      "name": "Check Open PR Exists1",
+      "executeOnce": true,
+      "credentials": {
+        "githubApi": {
+          "id": "RjbLWfjghp6eS9qR",
+          "name": "GitHub_product_docs_write"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Parse Repository Input1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Generation Error": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tracker Generation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Tracker Generation Failed": {
+      "main": [
+        [
+          {
+            "node": "Tracker - Set Generation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tracker - Set Generation Failed": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit Generation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit Generation Failed": {
+      "main": [
+        [
+          {
+            "node": "Audit - Set Generation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Changed?1": {
+      "main": [
+        [
+          {
+            "node": "PUT File1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Publish Error": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tracker Failed Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Tracker Failed Update": {
+      "main": [
+        [
+          {
+            "node": "Tracker - Set Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tracker - Set Failed": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit Failed Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit Failed Update": {
+      "main": [
+        [
+          {
+            "node": "Audit - Set Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PUT File1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Documents",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Publish Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Upsert Payload1": {
+      "main": [
+        [
+          {
+            "node": "Content Changed?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check File Exists2": {
+      "main": [
+        [
+          {
+            "node": "Prepare Upsert Payload1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BRS - Generate1": {
+      "main": [
+        [
+          {
+            "node": "Generation Successful?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BRS - Scan Source1": {
+      "main": [
+        [
+          {
+            "node": "BRS - Generate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SRS - Generate1": {
+      "main": [
+        [
+          {
+            "node": "BRS - Scan Source1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SRS - Scan Source1": {
+      "main": [
+        [
+          {
+            "node": "SRS - Generate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generation Successful?1": {
+      "main": [
+        [
+          {
+            "node": "Collect RE Documents1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Generation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Pull Request1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Created PR Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect RE Documents1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Files for GitHub2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Files for GitHub2": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Check Publish Branch Exists1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Documents": {
+      "main": [
+        [
+          {
+            "node": "Check Open PR Exists1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check File Exists2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Created PR Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tracker Success Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Publish Branch Exists1": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Base Branch SHA1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open PR Exists?1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Existing PR Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Pull Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Publish Branch1": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Existing PR Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tracker Success Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Tracker Success Update": {
+      "main": [
+        [
+          {
+            "node": "Tracker - Set Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tracker - Set Success": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit Success Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit Success Update": {
+      "main": [
+        [
+          {
+            "node": "Audit - Set Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SDS - Scan Source1": {
+      "main": [
+        [
+          {
+            "node": "SDS - Generate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SDS - Generate1": {
+      "main": [
+        [
+          {
+            "node": "SRS - Scan Source1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare RE Workspace1": {
+      "main": [
+        [
+          {
+            "node": "SDS - Scan Source1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Repository Input1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tracker Running Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tracker - Set Running": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Tracker Running Update": {
+      "main": [
+        [
+          {
+            "node": "Tracker - Set Running",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit - Start Run": {
+      "main": [
+        [
+          {
+            "node": "Restore Component Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit Start": {
+      "main": [
+        [
+          {
+            "node": "Audit - Start Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Component Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare RE Workspace1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Base Branch SHA1": {
+      "main": [
+        [
+          {
+            "node": "Create Publish Branch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Open PR Exists1": {
+      "main": [
+        [
+          {
+            "node": "Open PR Exists?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "4704faef-2627-4766-9d8a-8c07e0a15dac",
+  "meta": {
+    "instanceId": "9f6a250b5e41057ebc46f16e9a43e0df40b68d425919a02fddb29ca567a38e97"
+  },
+  "id": "P85mkeFvbDFWxi9O",
+  "tags": []
+}
