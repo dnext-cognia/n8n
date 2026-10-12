@@ -1,0 +1,11 @@
+**Cognia KB – Specification Upload Recovery & Safe Retry**
+
+This workflow identifies and investigates failed, timed-out, or unresolved BRS, SRS, and SDS document uploads from the `dnext-product-docs` GitHub repository to Cognia Knowledge Base services.
+
+It retrieves historical upload records from the `spec_kb_audit` Data Table, selects recovery candidates, checks document availability and indexing jobs in the corresponding KB service, and compares GitHub source MD5 checksums with indexed document checksums.
+
+Based on the verification results, it classifies documents as recovered, awaiting indexing, requiring manual review, or eligible for further recovery action.
+
+The workflow maintains an audit trail while preventing duplicate records for unchanged recovery outcomes.
+
+**Current status:** Recovery verification and audit deduplication are implemented. Safe automatic retry, post-retry verification, and final recovery auditing are the next development stages.
