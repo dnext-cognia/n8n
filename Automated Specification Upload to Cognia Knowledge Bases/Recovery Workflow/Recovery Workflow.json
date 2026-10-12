@@ -1,0 +1,1724 @@
+{
+  "name": "Recovery Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "96f8142a-2ac2-48ae-b0e6-30b9ecf6cf3d",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "wLp83q63U8tAK7rh",
+          "mode": "list",
+          "cachedResultName": "spec_kb_audit",
+          "cachedResultUrl": "/projects/Le2Jkh26c55HWdvu/datatables/wLp83q63U8tAK7rh"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "0c7bcccc-e57b-425a-9cc7-2d7d121dc1a7",
+      "name": "Get Recovery Audit Records"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst records = $input.all().map(item => item.json);\n\n// 1. Eksik veya geçersiz audit kayıtlarını çıkar\nconst validRecords = records.filter(r =>\n  r.pipeline_id &&\n  r.commit_id &&\n  r.spec_path &&\n  r.document_type &&\n  r.kb_url &&\n  r.target_version &&\n  r.status\n);\n\n// 2. Her doküman + commit + versiyon için\n// en güncel audit kaydını belirle\nconst latestByDocument = new Map();\n\nfor (const record of validRecords) {\n  const key = JSON.stringify([\n    record.pipeline_id,\n    record.commit_id,\n    record.spec_path,\n    record.document_type,\n    record.kb_url,\n    record.target_version\n  ]);\n\n  const existing = latestByDocument.get(key);\n\n  const recordTime = Date.parse(\n    record.processed_at ||\n    record.updatedAt ||\n    record.createdAt ||\n    ''\n  ) || 0;\n\n  const existingTime = existing\n    ? (Date.parse(\n        existing.processed_at ||\n        existing.updatedAt ||\n        existing.createdAt ||\n        ''\n      ) || 0)\n    : -1;\n\n  if (\n    !existing ||\n    recordTime > existingTime ||\n    (recordTime === existingTime &&\n      Number(record.id || 0) > Number(existing.id || 0))\n  ) {\n    latestByDocument.set(key, record);\n  }\n}\n\n// 3. Sadece recovery gerektiren kayıtları seç\nconst recoveryStatuses = new Set([\n  'FAILED',\n  'TIMEOUT',\n  'PENDING_REVIEW'\n]);\n\nconst candidates = [...latestByDocument.values()]\n  .filter(r =>\n    recoveryStatuses.has(\n      String(r.status).trim().toUpperCase()\n    )\n  );\n\n// 4. Sonuçları sonraki node'lara aktar\nreturn candidates.map(record => ({\n  json: {\n    ...record,\n    original_status: String(record.status).toUpperCase(),\n    recovery_action: 'VERIFY_KB',\n    recovery_required: true\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "6544be5f-be02-4c18-9b78-ee5a7600eed0",
+      "name": "Select Recovery Candidates"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "a384c9e4-f5c2-4670-b442-5b10795529b2",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.kb_url + '/api/v1/documents' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "={{ $json.target_version }}"
+            },
+            {
+              "name": "name_filter",
+              "value": "={{ $json.spec_path.split('/').pop().replace(/\\.md$/i, '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1248,
+        96
+      ],
+      "id": "2b0701cd-27b5-4583-a591-4e88fb735135",
+      "name": "Check KB Documents",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst source = $('Loop Over Items').item.json;\n\nconst documents = Array.isArray(response.body)\n  ? response.body\n  : Array.isArray(response.body?.documents)\n    ? response.body.documents\n    : [];\n\n// spec_name yerine gerçek dosya adını kullan\nconst expectedName = String(source.spec_path || '')\n  .split('/')\n  .pop()\n  .replace(/\\.md$/i, '')\n  .trim()\n  .toLowerCase();\n\nconst matches = documents.filter(doc =>\n  String(doc.doc_name || '')\n    .trim()\n    .toLowerCase() === expectedName\n);\n\nlet verificationStatus;\n\nif (response.statusCode !== 200) {\n  verificationStatus = 'CHECK_FAILED';\n} else if (matches.length === 1) {\n  verificationStatus = 'FOUND_IN_KB';\n} else if (matches.length > 1) {\n  verificationStatus = 'AMBIGUOUS';\n} else {\n  verificationStatus = 'NOT_FOUND';\n}\n\nconst existingDoc =\n  verificationStatus === 'FOUND_IN_KB'\n    ? matches[0]\n    : null;\n\nreturn {\n  json: {\n    ...source,\n    verification_status: verificationStatus,\n    found_in_kb: Boolean(existingDoc),\n    existing_doc_id: existingDoc?.doc_id || '',\n    existing_doc_md5: existingDoc?.md5 || '',\n    existing_doc_path: existingDoc?.path || '',\n    matching_documents: matches.length,\n    http_status: response.statusCode\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        96
+      ],
+      "id": "59023737-892d-46cd-8289-7d57ab3a8e25",
+      "name": "Verify KB Document"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.kb_url + '/api/v1/documents/jobs' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1840,
+        480
+      ],
+      "id": "25e88aa7-2a57-43af-b764-d4eb17539a82",
+      "name": "Check Active Jobs",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst source = $('Verify KB Document').item.json;\n\nconst jobs = Array.isArray(response.body?.jobs)\n  ? response.body.jobs\n  : [];\n\nconst expectedFile = source.spec_path\n  .split('/')\n  .pop()\n  .toLowerCase();\n\nconst matchingJobs = jobs.filter(job =>\n  String(job.file_name || '').toLowerCase() === expectedFile &&\n  String(job.version || '') === String(source.target_version)\n);\n\nconst completedJobs = matchingJobs.filter(job =>\n  String(job.status || '').toLowerCase() === 'done' &&\n  Boolean(job.doc_id)\n);\n\nconst activeJobs = matchingJobs.filter(job =>\n  ['pending', 'queued', 'running', 'processing', 'in_progress']\n    .includes(String(job.status || '').toLowerCase())\n);\n\nlet recoveryDecision = 'MANUAL_REVIEW';\nlet recoveredDocId = '';\n\nif (response.statusCode !== 200) {\n  recoveryDecision = 'JOB_CHECK_FAILED';\n} else if (activeJobs.length > 0) {\n  recoveryDecision = 'WAIT_FOR_JOB';\n} else if (completedJobs.length > 0) {\n  const ids = [...new Set(completedJobs.map(job => job.doc_id))];\n\n  if (ids.length === 1) {\n    recoveryDecision = 'VERIFY_COMPLETED_DOC';\n    recoveredDocId = ids[0];\n  } else {\n    recoveryDecision = 'MANUAL_REVIEW';\n  }\n} else if (matchingJobs.length === 0) {\n  recoveryDecision = 'JOB_NOT_FOUND';\n} else {\n  recoveryDecision = 'MANUAL_REVIEW';\n}\n\nreturn {\n  json: {\n    ...source,\n    matching_job_count: matchingJobs.length,\n    completed_job_count: completedJobs.length,\n    active_job_count: activeJobs.length,\n    recovered_doc_id: recoveredDocId,\n    recovery_decision: recoveryDecision\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        480
+      ],
+      "id": "960525b9-ae58-4fdd-88fa-22e3faa3890b",
+      "name": "Evaluate Recovery Jobs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6cc5f0c8-b15f-4256-a349-57a87f475dfc",
+              "leftValue": "={{ $json.found_in_kb }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1664,
+        96
+      ],
+      "id": "3174e2f9-0605-43f3-9dba-1e14785d46f8",
+      "name": "Found in KB?"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/dnext-technology/' + $json.pipeline_id + '/contents/' + $json.spec_path.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent($json.commit_id) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1872,
+        0
+      ],
+      "id": "08da8db7-fe7f-4c93-bc96-668e5cfbf13b",
+      "name": "Get Source File from GitHub",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst crypto = require('crypto');\n\nconst response = $json;\nconst githubFile = response.body ?? response;\n\nconst source = $('Verify KB Document').item.json;\n\nif (githubFile.encoding !== 'base64' || !githubFile.content) {\n  throw new Error('GitHub dosya içeriği Base64 formatında değil.');\n}\n\n// GitHub Base64 içeriğini gerçek byte'lara dönüştür\nconst fileBuffer = Buffer.from(\n  githubFile.content.replace(/\\s/g, ''),\n  'base64'\n);\n\n// MD5 hesapla\nconst sourceMd5 = crypto\n  .createHash('md5')\n  .update(fileBuffer)\n  .digest('hex');\n\nconst kbMd5 = String(source.existing_doc_md5 || '')\n  .toLowerCase();\n\nconst md5Matches = sourceMd5 === kbMd5;\n\nreturn {\n  json: {\n    ...source,\n    github_blob_sha: githubFile.sha,\n    github_file_size: fileBuffer.length,\n    source_md5: sourceMd5,\n    kb_md5: kbMd5,\n    md5_matches: md5Matches,\n    recovery_decision: md5Matches\n      ? 'ALREADY_INDEXED'\n      : 'CONTENT_MISMATCH'\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        0
+      ],
+      "id": "ef0604aa-5911-4e40-a8b4-41cd893dc6fd",
+      "name": "Compare Source MD5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5aee5bbf-dc6f-4a93-9c99-6aee8823cd78",
+              "leftValue": "={{ $json.recovery_decision === 'ALREADY_INDEXED' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2288,
+        0
+      ],
+      "id": "3a187680-317d-4924-8218-abc8795a1539",
+      "name": "Already Indexed?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "SUCCESS",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "Recovered: GitHub MD5 matches existing KB document",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2496,
+        -32
+      ],
+      "id": "fe6a0cc8-065c-4eb3-ae54-d4ba414849c7",
+      "name": "Prepare Recovered Audit"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "wLp83q63U8tAK7rh",
+          "mode": "list",
+          "cachedResultName": "spec_kb_audit",
+          "cachedResultUrl": "/projects/Le2Jkh26c55HWdvu/datatables/wLp83q63U8tAK7rh"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "pipeline_id",
+              "displayName": "pipeline_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "commit_id",
+              "displayName": "commit_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "spec_path",
+              "displayName": "spec_path",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "spec_name",
+              "displayName": "spec_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "document_type",
+              "displayName": "document_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "kb_url",
+              "displayName": "kb_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "target_version",
+              "displayName": "target_version",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "doc_id",
+              "displayName": "doc_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4032,
+        -48
+      ],
+      "id": "5263ae68-cbde-46a1-b294-68fbf3b5eedd",
+      "name": "Save Recovered Audit"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "={{ 'CONTENT_MISMATCH: GitHub MD5=' + $json.source_md5 + ', KB MD5=' + $json.kb_md5 }}",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2480,
+        160
+      ],
+      "id": "bfe60ee7-e8d9-4ba4-ba66-9b26787a666e",
+      "name": "Prepare Content Mismatch"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "WAIT_FOR_JOB",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "607df18a-cf24-4fa5-b7c5-b2570aebf8e7"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "WAIT"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "484beb18-b81f-4363-b7a0-f18510e1134f",
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "VERIFY_COMPLETED_DOC",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "VERIFY"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "80fafa54-23d8-455d-b84b-6962233cdbcc",
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "JOB_NOT_FOUND",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NOT_FOUND"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7ccc3ca3-bc70-4e92-8d97-cca533d52abf",
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "JOB_CHECK_FAILED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CHECK_FAILED"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2272,
+        688
+      ],
+      "id": "74e93ad6-e33c-40dc-b094-1ebf3d700cfc",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.kb_url + '/api/v1/documents' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "={{ $json.target_version }}"
+            },
+            {
+              "name": "name_filter",
+              "value": "={{ $json.spec_path.split('/').pop().replace(/\\.md$/i, '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2960,
+        496
+      ],
+      "id": "5015b021-4821-4ce9-b62f-eb0926dcb7bb",
+      "name": "Recheck KB Document",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "Recovery: backend indexing job is still active",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2496,
+        352
+      ],
+      "id": "15af579b-88fe-43f1-880d-2528f12238eb",
+      "name": "Prepare Waiting Audit"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst source = $('Evaluate Recovery Jobs').item.json;\n\nconst documents = Array.isArray(response.body)\n  ? response.body\n  : [];\n\nconst expectedName = String(source.spec_path || '')\n  .split('/')\n  .pop()\n  .replace(/\\.md$/i, '')\n  .toLowerCase();\n\nconst matches = documents.filter(doc =>\n  String(doc.doc_name || '').toLowerCase() === expectedName &&\n  String(doc.doc_id || doc.id || '') ===\n    String(source.recovered_doc_id || '')\n);\n\nconst verified =\n  response.statusCode === 200 &&\n  matches.length === 1 &&\n  Boolean(matches[0]?.md5);\n\nconst doc = verified ? matches[0] : null;\n\nreturn {\n  json: {\n    ...source,\n    verification_status: verified\n      ? 'FOUND_IN_KB'\n      : 'NOT_VERIFIED',\n    found_in_kb: verified,\n    existing_doc_id: doc?.doc_id || '',\n    existing_doc_md5: doc?.md5 || '',\n    existing_doc_path: doc?.path || '',\n    matching_documents: matches.length,\n    http_status: response.statusCode\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3168,
+        496
+      ],
+      "id": "ddbe63ac-9133-4bf4-b56e-d23150e492f3",
+      "name": "Verify Rechecked Document"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e660b3f8-59a9-49b0-bdd9-92b42ffa2e62",
+              "leftValue": "={{ $json.found_in_kb }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3376,
+        496
+      ],
+      "id": "8224dcd3-9d6a-449b-8ffb-a9d86958ab82",
+      "name": "Document Verified?"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/dnext-technology/' + $json.pipeline_id + '/contents/' + $json.spec_path.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent($json.commit_id) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3680,
+        480
+      ],
+      "id": "0a507a40-5b8e-40c7-8294-64193d4464bd",
+      "name": "Get Source File from GitHub1",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "fda2ca8e-6609-4685-ac3b-acfcca039b7a",
+              "name": "doc_id",
+              "value": "={{ '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "Recovery: no matching job found; indexing outcome unknown",
+              "type": "string"
+            },
+            {
+              "id": "199f3b5e-bbab-4990-bf3a-6ec6e084f7e7",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2960,
+        672
+      ],
+      "id": "21e61bd4-3cfa-480a-8051-a9791e8963fb",
+      "name": "Prepare Job Not Found"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "fda2ca8e-6609-4685-ac3b-acfcca039b7a",
+              "name": "doc_id",
+              "value": "{{ '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "Recovery: job status API check failed",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3184,
+        736
+      ],
+      "id": "e0be62d2-9258-4d75-92fb-5da61eb263d6",
+      "name": "Prepare Check Failed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "fda2ca8e-6609-4685-ac3b-acfcca039b7a",
+              "name": "doc_id",
+              "value": "={{ $json.recovered_doc_id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "={{ 'Recovery: manual review required; decision=' + $json.recovery_decision }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3408,
+        704
+      ],
+      "id": "a9ee8fea-82ab-4034-b920-52cc66e3ae70",
+      "name": "Prepare Manual Review"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst crypto = require('crypto');\n\nconst response = $json;\nconst githubFile = response.body ?? response;\n\nconst source = $('Verify Rechecked Document').item.json;\n\nif (githubFile.encoding !== 'base64' || !githubFile.content) {\n  throw new Error('GitHub dosya içeriği Base64 formatında değil.');\n}\n\n// GitHub Base64 içeriğini gerçek byte'lara dönüştür\nconst fileBuffer = Buffer.from(\n  githubFile.content.replace(/\\s/g, ''),\n  'base64'\n);\n\n// MD5 hesapla\nconst sourceMd5 = crypto\n  .createHash('md5')\n  .update(fileBuffer)\n  .digest('hex');\n\nconst kbMd5 = String(source.existing_doc_md5 || '')\n  .toLowerCase();\n\nconst md5Matches = sourceMd5 === kbMd5;\n\nreturn {\n  json: {\n    ...source,\n    github_blob_sha: githubFile.sha,\n    github_file_size: fileBuffer.length,\n    source_md5: sourceMd5,\n    kb_md5: kbMd5,\n    md5_matches: md5Matches,\n    recovery_decision: md5Matches\n      ? 'ALREADY_INDEXED'\n      : 'CONTENT_MISMATCH'\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3888,
+        480
+      ],
+      "id": "dac36888-d3c9-4731-880b-a870f30eb962",
+      "name": "Compare Source MD5 1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "={{ 'Recovery: completed job could not be verified in KB; doc_id=' + ($json.recovered_doc_id || 'unknown') }}",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3696,
+        688
+      ],
+      "id": "8dc2b89d-287d-42e2-9342-c2ff88cf2311",
+      "name": "Prepare Verification Failed"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst record = $json;\n\nconst requiredFields = [\n  'pipeline_id',\n  'commit_id',\n  'spec_path',\n  'spec_name',\n  'document_type',\n  'kb_url',\n  'target_version',\n  'status'\n];\n\nconst missingFields = requiredFields.filter(field =>\n  record[field] === undefined ||\n  record[field] === null ||\n  String(record[field]).trim() === ''\n);\n\nif (missingFields.length > 0) {\n  throw new Error(\n    'Missing required audit fields: ' +\n    missingFields.join(', ')\n  );\n}\n\n// Yalnızca spec_kb_audit tablosundaki sütunları döndür\nreturn {\n  json: {\n    pipeline_id: record.pipeline_id,\n    commit_id: record.commit_id,\n    spec_path: record.spec_path,\n    spec_name: record.spec_name,\n    document_type: record.document_type,\n    kb_url: record.kb_url,\n    target_version: record.target_version,\n    doc_id: String(record.doc_id ?? '').replace(/^['\"]+|['\"]+$/g, '').trim(),\n    status: String(record.status).toUpperCase(),\n    error_message: record.error_message || '',\n    processed_at: new Date().toISOString()\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        -32
+      ],
+      "id": "cbc7032a-3ea7-4230-ba45-307a5288601f",
+      "name": "Normalize Recovery Audit"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst history = $input.all().map(item => item.json);\n\nconst runIndex = $runIndex;\nconst newRecord = $('Normalize Recovery Audit')\n  .all(0, runIndex)[0]?.json;\n\nif (!newRecord) {\n  throw new Error(`New record missing at run ${runIndex}`);\n}\n\nconst norm = value =>\n  String(value ?? '')\n    .replace(/^['\"]+|['\"]+$/g, '')\n    .trim();\n\nconst matchingHistory = history.filter(r =>\n  norm(r.pipeline_id) === norm(newRecord.pipeline_id) &&\n  norm(r.commit_id) === norm(newRecord.commit_id) &&\n  norm(r.spec_path) === norm(newRecord.spec_path) &&\n  norm(r.target_version) === norm(newRecord.target_version)\n);\n\nconst duplicate = matchingHistory.find(r =>\n  norm(r.status).toUpperCase() ===\n    norm(newRecord.status).toUpperCase() &&\n  norm(r.doc_id) === norm(newRecord.doc_id) &&\n  norm(r.error_message) === norm(newRecord.error_message)\n);\n\nreturn [{\n  json: {\n    ...newRecord,\n    should_save: !duplicate,\n    audit_action: duplicate ? 'SKIP_DUPLICATE' : 'INSERT',\n    previous_audit_id: duplicate?.id ?? null,\n\n    // Geçici debug alanları\n    debug_run_index: runIndex,\n    debug_new_spec: newRecord.spec_path,\n    debug_new_commit: newRecord.commit_id,\n    debug_history_count: history.length,\n    debug_matching_count: matchingHistory.length,\n    debug_history_specs: [...new Set(history.map(r => r.spec_path))],\n    debug_history_commits: [...new Set(history.map(r => r.commit_id))],\n    debug_existing_statuses: matchingHistory.map(r => ({\n      id: r.id,\n      status: r.status,\n      doc_id: r.doc_id,\n      error_message: r.error_message\n    }))\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3408,
+        -32
+      ],
+      "id": "ab2b9850-f34f-4d92-b107-40bedf356346",
+      "name": "Should Save Recovery Audit?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4d919e0b-2f65-4aa7-9034-3deb7294e043",
+              "leftValue": "={{ $json.should_save }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3600,
+        -32
+      ],
+      "id": "3a92bb44-facb-448f-be0f-8d2f6caf9ae4",
+      "name": "Save New Audit?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "={{ $json.status }}",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "={{ $json.error_message }}",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3808,
+        -48
+      ],
+      "id": "c4bebb8e-975b-45c2-9319-b7700f67a64b",
+      "name": "Prepare Final Audit Row"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_kb_audit",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=pipeline_id",
+              "condition": "=eq",
+              "keyValue": "={{ $json.pipeline_id }}"
+            },
+            {
+              "keyName": "=commit_id",
+              "condition": "=eq",
+              "keyValue": "={{ $json.commit_id }}"
+            },
+            {
+              "keyName": "=spec_path",
+              "condition": "=eq",
+              "keyValue": "={{ $json.spec_path }}"
+            },
+            {
+              "keyName": "=target_version",
+              "condition": "=eq",
+              "keyValue": "={{ $json.target_version }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3200,
+        -32
+      ],
+      "id": "9fab6d86-9467-4da6-b7b6-f9c1e467dd03",
+      "name": "Check Existing Recovery Audit",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst rows = $input.all()\n  .map(item => item.json)\n  .filter(r =>\n    r.pipeline_id &&\n    r.commit_id &&\n    r.spec_path &&\n    r.target_version\n  );\n\nconst groups = new Map();\n\nfor (const row of rows) {\n  const key = JSON.stringify([\n    row.pipeline_id,\n    row.commit_id,\n    row.spec_path,\n    row.target_version\n  ]);\n\n  if (!groups.has(key)) groups.set(key, []);\n  groups.get(key).push(row);\n}\n\nconst duplicates = [];\n\nfor (const [key, records] of groups.entries()) {\n  records.sort((a, b) =>\n    Number(a.id || 0) - Number(b.id || 0)\n  );\n\n  for (let i = 1; i < records.length; i++) {\n    const previous = records[i - 1];\n    const current = records[i];\n\n    const same =\n      String(previous.status || '') === String(current.status || '') &&\n      String(previous.doc_id || '') === String(current.doc_id || '') &&\n      String(previous.error_message || '') ===\n        String(current.error_message || '');\n\n    if (same) {\n      duplicates.push({\n        spec_path: current.spec_path,\n        previous_id: previous.id,\n        duplicate_id: current.id,\n        status: current.status\n      });\n    }\n  }\n}\n\nreturn [{\n  json: {\n    total_rows: $input.all().length,\n    valid_rows: rows.length,\n    duplicate_count: duplicates.length,\n    duplicates\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -96
+      ],
+      "id": "71b01e4b-5644-45f1-953c-e7cc428291b2",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get Recovery Audit Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recovery Audit Records": {
+      "main": [
+        [
+          {
+            "node": "Select Recovery Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Recovery Candidates": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Check KB Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check KB Documents": {
+      "main": [
+        [
+          {
+            "node": "Verify KB Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify KB Document": {
+      "main": [
+        [
+          {
+            "node": "Found in KB?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Active Jobs": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Recovery Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Found in KB?": {
+      "main": [
+        [
+          {
+            "node": "Get Source File from GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Active Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Source File from GitHub": {
+      "main": [
+        [
+          {
+            "node": "Compare Source MD5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Source MD5": {
+      "main": [
+        [
+          {
+            "node": "Already Indexed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Indexed?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Recovered Audit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Content Mismatch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Recovered Audit": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Content Mismatch": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Recovered Audit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Recovery Jobs": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Prepare Waiting Audit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recheck KB Document",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Job Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Check Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Manual Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Waiting Audit": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recheck KB Document": {
+      "main": [
+        [
+          {
+            "node": "Verify Rechecked Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Rechecked Document": {
+      "main": [
+        [
+          {
+            "node": "Document Verified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Source File from GitHub1": {
+      "main": [
+        [
+          {
+            "node": "Compare Source MD5 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Verified?": {
+      "main": [
+        [
+          {
+            "node": "Get Source File from GitHub1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Verification Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Job Not Found": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Check Failed": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Manual Review": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Source MD5 1": {
+      "main": [
+        [
+          {
+            "node": "Already Indexed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Verification Failed": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Recovery Audit": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Save Recovery Audit?": {
+      "main": [
+        [
+          {
+            "node": "Save New Audit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save New Audit?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Final Audit Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Final Audit Row": {
+      "main": [
+        [
+          {
+            "node": "Save Recovered Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Recovery Audit": {
+      "main": [
+        [
+          {
+            "node": "Should Save Recovery Audit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "c750b06a-b273-4950-879b-46f35ae23a45",
+  "meta": {
+    "instanceId": "9f6a250b5e41057ebc46f16e9a43e0df40b68d425919a02fddb29ca567a38e97"
+  },
+  "id": "lSrEhuNp5CQAuRt7Abfsx",
+  "tags": []
+}
