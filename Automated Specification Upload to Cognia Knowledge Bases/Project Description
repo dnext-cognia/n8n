@@ -1,0 +1,18 @@
+### Project Description — Automated Specification Upload to Cognia Knowledge Bases
+
+This n8n workflow automates the synchronization of BRS (Business Requirements Specification), SRS (Software Requirements Specification), and SDS (Software Design Specification) documents from the GitHub `dnext-product-docs` repository to their respective Cognia Knowledge Bases.
+
+The workflow detects relevant document changes, retrieves Markdown files, identifies the appropriate Knowledge Base, and uploads documents through authenticated REST API requests using Keycloak OAuth2.
+
+To prevent duplicate uploads, it checks previously successful uploads in the audit table before processing each document. It also records upload results, handles errors, and tracks processing status.
+
+**Key Features:**
+- Automated GitHub change detection and document retrieval
+- Dynamic routing to BRS, SRS, and SDS Knowledge Bases
+- Secure authentication through Keycloak OAuth2
+- Sequential document processing using n8n loops
+- Duplicate upload prevention through audit history
+- Upload status logging and error handling
+- Commit tracker updates only after successful processing of all relevant documents
+
+**Goal:** Maintain reliable, traceable, and automated synchronization between GitHub specification documents and Cognia Knowledge Bases while minimizing manual effort and duplicate uploads.
