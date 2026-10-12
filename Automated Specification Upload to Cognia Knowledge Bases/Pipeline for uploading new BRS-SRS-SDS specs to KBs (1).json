@@ -1,0 +1,1754 @@
+{
+  "name": "Pipeline for uploading new BRS-SRS-SDS specs to KBs",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "eb814d68-e3c3-4715-8242-c129405885a4",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d3372abe-b939-43a3-9d02-43d9262c67db",
+              "name": "repoOwner",
+              "value": "dnext-technology",
+              "type": "string"
+            },
+            {
+              "id": "5b6bffa3-5e42-4e56-af7e-d0d9f2635535",
+              "name": "repoName",
+              "value": "dnext-product-docs",
+              "type": "string"
+            },
+            {
+              "id": "da9019c2-4495-4c34-90d8-0e38f9b2852e",
+              "name": "branch",
+              "value": "main",
+              "type": "string"
+            },
+            {
+              "id": "ab33f32e-51a4-4545-93b2-2bcbf249db4d",
+              "name": "brsKbUrl",
+              "value": "https://cognia-kb-brs.dnext-ai.link/",
+              "type": "string"
+            },
+            {
+              "id": "fb530671-bfca-4bf8-ae94-e3b3a4022d50",
+              "name": "srsKbUrl",
+              "value": "https://cognia-kb-srs.dnext-ai.link/",
+              "type": "string"
+            },
+            {
+              "id": "59cacede-bf46-4a9c-a5a1-00423bda366f",
+              "name": "sdsKbUrl",
+              "value": "https://cognia-kb-sds.dnext-ai.link/",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "ada704ef-62b4-4302-8123-e3b6923baddf",
+      "name": "Pipeline Config"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.repoOwner}}/{{$json.repoName}}/commits/{{$json.branch}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        624,
+        0
+      ],
+      "id": "91540b71-b9ec-40c0-a0a7-c1bbcf4c893d",
+      "name": "Get Latest Commit",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "502ae3dd-1011-4d51-aba1-ad07e1faa59c",
+              "name": "repoOwner",
+              "value": "={{ $('Pipeline Config').item.json.repoOwner }}",
+              "type": "string"
+            },
+            {
+              "id": "9d16d8be-612d-48b4-9fe7-2a99dfc39f29",
+              "name": "repoName",
+              "value": "={{ $('Pipeline Config').item.json.repoName }}",
+              "type": "string"
+            },
+            {
+              "id": "1fd5951a-ebe0-49b3-8d00-99745309534d",
+              "name": "branch",
+              "value": "={{ $('Pipeline Config').item.json.branch }}",
+              "type": "string"
+            },
+            {
+              "id": "6dd75eca-b717-4a65-8212-21d41afb5f99",
+              "name": "currentCommitSha",
+              "value": "={{ $json.sha }}",
+              "type": "string"
+            },
+            {
+              "id": "38499361-a6c6-4942-b0bd-0f9b33664a6f",
+              "name": "commitMessage",
+              "value": "={{ $json.commit.message }}",
+              "type": "string"
+            },
+            {
+              "id": "abcd22b0-cbd2-4950-9581-e361ea16fbfd",
+              "name": "commitDate",
+              "value": "={{ $json.commit.author.date }}",
+              "type": "string"
+            },
+            {
+              "id": "ac4317f5-33c3-4d91-a7bd-30dcc2b6943f",
+              "name": "commitAuthor",
+              "value": "={{ $json.commit.author.name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        832,
+        0
+      ],
+      "id": "164ad220-08ad-40c1-be72-4235e825b126",
+      "name": "Normalize Commit Info"
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "spec_kb_tracker",
+        "columns": {
+          "column": [
+            {
+              "name": "pipeline_id"
+            },
+            {
+              "name": "last_processed_commit"
+            },
+            {
+              "name": "updated_at",
+              "type": "date"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        704,
+        -336
+      ],
+      "id": "821a08e1-0faf-4b6f-9b2f-751806af76f1",
+      "name": "Create a data table"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "IYZUc78QUCkjiuqY",
+          "mode": "list",
+          "cachedResultName": "spec_kb_tracker",
+          "cachedResultUrl": "/projects/Le2Jkh26c55HWdvu/datatables/IYZUc78QUCkjiuqY"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=pipeline_id",
+              "condition": "=eq",
+              "keyValue": "={{ $('Pipeline Config').item.json.repoName }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "68fc055c-b3cc-4d18-badc-f191b5a5a27f",
+      "name": "Get Tracker"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b56553bc-3000-4e13-9aa7-bda274d1d86d",
+              "leftValue": "={{ $('Normalize Commit Info').item.json.currentCommitSha }}",
+              "rightValue": "={{ $('Get Tracker').item.json.last_processed_commit }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1248,
+        0
+      ],
+      "id": "4158d3e2-1f50-49f7-98b8-e35b0ab56396",
+      "name": "Is New Commit?"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$('Pipeline Config').item.json.repoOwner}}/{{$('Pipeline Config').item.json.repoName}}/commits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "sha",
+              "value": "={{ $('Pipeline Config').item.json.branch }}"
+            },
+            {
+              "name": "per_page",
+              "value": "2"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        752,
+        176
+      ],
+      "id": "3a07c072-6c0c-40cf-a1cf-2225102c61d5",
+      "name": "Get Previous Commit",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f779f944-0baa-423a-8be4-ab89e269151a",
+              "name": "previousCommitSha",
+              "value": "={{ $('Get Previous Commit').all()[1].json.sha }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        960,
+        192
+      ],
+      "id": "a73e3575-5911-4ddb-9686-104b73c17b19",
+      "name": "Extract Previous Commit"
+    },
+    {
+      "parameters": {
+        "content": "test için ",
+        "height": 176,
+        "width": 448
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        736,
+        144
+      ],
+      "typeVersion": 1,
+      "id": "8853f377-ff32-4b8c-a0e6-cffd511e3334",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$('Pipeline Config').item.json.repoOwner}}/{{$('Pipeline Config').item.json.repoName}}/compare/{{$('Get Tracker').item.json.last_processed_commit}}...{{$('Normalize Commit Info').item.json.currentCommitSha}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1488,
+        -16
+      ],
+      "id": "14619d75-eabf-4cc8-8df9-4894c76ff7b8",
+      "name": "Compare Commits",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$('Pipeline Config').item.json.repoOwner}}/{{$('Pipeline Config').item.json.repoName}}/commits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "sha",
+              "value": "={{ $('Pipeline Config').item.json.branch }}"
+            },
+            {
+              "name": "per_page",
+              "value": "10"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        544,
+        320
+      ],
+      "id": "56e05df6-cfa2-4d45-97cd-959826662011",
+      "name": "Get Commit History",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst compare = $input.first().json;\nconst files = compare.files ?? [];\n\nconst relevantFiles = files\n  .filter(file => {\n    const path = file.filename ?? '';\n    const lowerPath = path.toLowerCase();\n\n    // Yalnızca Markdown dosyaları\n    if (!lowerPath.endsWith('.md')) return false;\n\n    // Silinen dosyaları işleme alma\n    if (file.status === 'removed') return false;\n\n    // BRS kök dizinde, SRS/SDS servis dizinlerinde\n    const isSpec =\n      path.startsWith('BRS/') ||\n      path.includes('/BRS/') ||\n      path.includes('/SRS/') ||\n      path.includes('/SDS/');\n\n    if (!isSpec) return false;\n\n    // Yardımcı dosyaları hariç tut\n    const excluded =\n      lowerPath.includes('/input/') ||\n      lowerPath.includes('handover') ||\n      lowerPath.includes('qareport') ||\n      lowerPath.includes('approval-record');\n\n    return !excluded;\n  })\n  .map(file => {\n    const path = file.filename;\n\n    let documentType = null;\n\n    if (path.startsWith('BRS/') || path.includes('/BRS/')) {\n      documentType = 'BRS';\n    } else if (path.includes('/SRS/')) {\n      documentType = 'SRS';\n    } else if (path.includes('/SDS/')) {\n      documentType = 'SDS';\n    }\n\n    return {\n      filename: path,\n      status: file.status,\n      sha: file.sha,\n      documentType,\n      additions: file.additions ?? 0,\n      deletions: file.deletions ?? 0,\n      changes: file.changes ?? 0\n    };\n  });\n\nreturn [{\n  json: {\n    baseCommit: compare.base_commit?.sha ?? null,\n    currentCommit:\n      $('Normalize Commit Info').first().json.currentCommitSha,\n    relevantChangeCount: relevantFiles.length,\n    hasRelevantChanges: relevantFiles.length > 0,\n    relevantFiles\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        -16
+      ],
+      "id": "0e6ecaab-c345-4a5d-a9e1-c2e72f0bb085",
+      "name": "Filter Relevant Spec Changes"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "82e0da2b-8ebe-40db-9b29-ed115c0729d1",
+              "leftValue": "={{ $json.hasRelevantChanges }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1888,
+        -16
+      ],
+      "id": "f64eb1f4-c163-48e9-b352-5800d43e2406",
+      "name": "Has Relevant Changes?"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "relevantFiles",
+        "include": "allOtherFields",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2128,
+        -32
+      ],
+      "id": "7f429003-1534-4a92-ae61-fdb831733bf8",
+      "name": "Split Relevant Files"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst output = [];\n\nfor (const item of items) {\n  const file = item.json.relevantFiles;\n\n  if (!file?.filename || !file?.documentType) {\n    continue;\n  }\n\n  const path = file.filename;\n  const documentType = file.documentType.toUpperCase();\n\n  if (!path.toLowerCase().endsWith('.md')) {\n    continue;\n  }\n\n  if (file.status === 'removed') {\n    continue;\n  }\n\n  const parts = path.split('/');\n\n  const typeIndex = parts.findIndex(\n    part => part.toUpperCase() === documentType\n  );\n\n  if (typeIndex === -1) {\n    continue;\n  }\n\n  // TYPE/<SpecFolder>/<File>.md\n  const afterType = parts.slice(typeIndex + 1);\n\n  if (afterType.length !== 2) {\n    continue;\n  }\n\n  const specFolder = afterType[0];\n  const fileName = afterType[1];\n\n  // Normalize: büyük/küçük harf, tire, alt çizgi farklarını kaldır\n  const normalize = value =>\n    value\n      .replace(/\\.md$/i, '')\n      .toLowerCase()\n      .replace(/[^a-z0-9]/g, '');\n\n  const normalizedFolder = normalize(specFolder);\n  const normalizedFile = normalize(fileName);\n\n  // Master dosyanın ismi, klasör ismiyle eşleşmeli\n  if (normalizedFolder !== normalizedFile) {\n    continue;\n  }\n\n  output.push({\n    json: {\n      filename: path,\n      fileName,\n      specName: specFolder,\n      documentType,\n      status: file.status,\n      sha: file.sha,\n      currentCommit: item.json.currentCommit,\n      baseCommit: item.json.baseCommit\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        -32
+      ],
+      "id": "665661cc-adb7-4354-8922-cc1208eefc15",
+      "name": "Identify Master Spec"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$('Pipeline Config').first().json.repoOwner}}/{{$('Pipeline Config').first().json.repoName}}/contents/{{$json.filename}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ref",
+              "value": "={{ $json.currentCommit }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.raw+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2512,
+        -32
+      ],
+      "id": "6b525e15-c980-4805-8385-a6ca61a3be1e",
+      "name": "Get Spec Content",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4440c2b9-1d5b-4d3a-9729-3fe532273001",
+              "name": "documentType",
+              "value": "={{ $('Identify Master Spec').item.json.documentType }}",
+              "type": "string"
+            },
+            {
+              "id": "5a3dab6a-63ce-49a1-a367-04d3aa3d07bc",
+              "name": "specName",
+              "value": "={{ $('Identify Master Spec').item.json.specName }}",
+              "type": "string"
+            },
+            {
+              "id": "3ba76824-9abe-4e56-9355-436d124bafae",
+              "name": "fileName",
+              "value": "={{ $('Identify Master Spec').item.json.fileName }}",
+              "type": "string"
+            },
+            {
+              "id": "3c2c32e9-8f9c-46f0-b009-d3cb11f17b76",
+              "name": "sourcePath",
+              "value": "={{ $('Identify Master Spec').item.json.filename }}",
+              "type": "string"
+            },
+            {
+              "id": "620bd586-dd0e-4689-972b-5dcf6fd3792a",
+              "name": "commitId",
+              "value": "={{ $('Identify Master Spec').item.json.currentCommit }}",
+              "type": "string"
+            },
+            {
+              "id": "a35727db-cc77-4fa2-a30f-9c2be3b997ab",
+              "name": "changeStatus",
+              "value": "={{ $('Identify Master Spec').item.json.status }}",
+              "type": "string"
+            },
+            {
+              "id": "8bf293ab-2055-486b-9a98-ca0f718772fc",
+              "name": "content",
+              "value": "={{ $json.data }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2720,
+        -32
+      ],
+      "id": "81ce34bd-e01a-4128-a5d1-bf7853fc6641",
+      "name": "Prepare KB Payload"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.documentType }}",
+                    "rightValue": "BRS",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "38336171-4514-49b7-aa51-5507110d4ea2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "BRS KB"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "bde9490e-9ea3-47c5-831f-c113fad60cea",
+                    "leftValue": "={{ $json.documentType }}",
+                    "rightValue": "SRS",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SRS KB"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "f1379f4e-83ee-427f-8438-f59b949f48d9",
+                    "leftValue": "={{ $json.documentType }}",
+                    "rightValue": "SDS",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SDS KB"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2928,
+        -400
+      ],
+      "id": "2cbd409f-9833-4219-a659-1be54313cac9",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "content",
+        "binaryPropertyName": "=data",
+        "options": {
+          "fileName": "={{ $json.fileName }}"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        3104,
+        -32
+      ],
+      "id": "a611a26c-2aea-4e05-b6fe-15d917845d84",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst results = $input.all();\nconst config = $('Pipeline Config').first().json;\n\nfunction getErrorMessage(response) {\n  const error = response.error ?? response.message;\n\n  if (typeof error === 'string') return error;\n  if (error && typeof error === 'object') {\n    return error.message || JSON.stringify(error);\n  }\n\n  return 'Upload not confirmed';\n}\n\nreturn results.map((item, index) => {\n  // n8n item-linking üzerinden kaynak metadata'yı bul.\n  // Loop içindeki item indeksine güvenerek tüm kaynak listesini tarama.\n  let source;\n\n  try {\n    source = $('Resolve KB Target').itemMatching(index).json;\n  } catch (error) {\n    throw new Error(\n      `Cannot match upload result to source metadata: ${error.message}`\n    );\n  }\n\n  const response = item.json;\n\n  const requiredFields = [\n    'commitId',\n    'sourcePath',\n    'specName',\n    'documentType',\n    'kbUrl'\n  ];\n\n  const missing = requiredFields.filter(field => !source[field]);\n\n  if (missing.length) {\n    throw new Error(\n      `Missing metadata: ${missing.join(', ')}`\n    );\n  }\n\n  const success =\n    response.status === 'indexed' &&\n    Boolean(response.doc_id);\n\n  return {\n    json: {\n      pipeline_id: config.repoName,\n      commit_id: source.commitId,\n      spec_path: source.sourcePath,\n      spec_name: source.specName,\n      document_type: source.documentType,\n      kb_url: source.kbUrl,\n      target_version:\n        response.version || source.targetVersion || 'v2.14',\n      doc_id: response.doc_id || '',\n      status: success ? 'SUCCESS' : 'FAILED',\n      error_message: success ? '' : getErrorMessage(response),\n      processed_at: new Date().toISOString()\n    },\n    pairedItem: { item: index }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4384,
+        80
+      ],
+      "id": "79c3707d-9d31-446c-93fe-b5c30c1334f1",
+      "name": "Prepare Audit Record"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst expectedItems = $('Prepare KB Payload').all();\nconst results = $input.all();\n\nconst config = $('Pipeline Config').first().json;\nconst commitInfo = $('Normalize Commit Info').first().json;\n\n// 1. Expected documents\nconst expectedDocuments = expectedItems.map(item => ({\n  spec_path: item.json.sourcePath,\n  document_type: item.json.documentType,\n  commit_id: item.json.commitId\n}));\n\nconst expectedCount = expectedDocuments.length;\n\n// 2. Normalize processed results\nconst processedDocuments = results.map(item => ({\n  spec_path: item.json.spec_path || item.json.sourcePath,\n  document_type:\n    item.json.document_type || item.json.documentType,\n  commit_id:\n    item.json.commit_id || item.json.commitId,\n  status: String(item.json.status || '').toUpperCase(),\n  doc_id: item.json.doc_id || ''\n}));\n\nconst processedCount = processedDocuments.length;\n\n// 3. Count statuses\nconst uploadedCount = processedDocuments.filter(\n  item => item.status === 'SUCCESS'\n).length;\n\nconst skippedCount = processedDocuments.filter(\n  item => item.status === 'SKIPPED'\n).length;\n\nconst failedCount = processedDocuments.filter(\n  item => !['SUCCESS', 'SKIPPED'].includes(item.status)\n).length;\n\nconst timeoutCount = processedDocuments.filter(\n  item => item.status === 'TIMEOUT'\n).length;\n\n// 4. Build document identity keys\nconst makeKey = item =>\n  JSON.stringify([\n    item.spec_path,\n    item.document_type\n  ]);\n\nconst expectedKeys = expectedDocuments.map(makeKey);\nconst processedKeys = processedDocuments.map(makeKey);\n\nconst expectedSet = new Set(expectedKeys);\nconst processedSet = new Set(processedKeys);\n\n// 5. Find missing documents\nconst missingDocuments = expectedDocuments.filter(\n  item => !processedSet.has(makeKey(item))\n);\n\n// 6. Find unexpected documents\nconst unexpectedDocuments = processedDocuments.filter(\n  item => !expectedSet.has(makeKey(item))\n);\n\n// 7. Find duplicate results\nconst seen = new Set();\n\nconst duplicateDocuments = processedDocuments.filter(item => {\n  const key = makeKey(item);\n\n  if (seen.has(key)) {\n    return true;\n  }\n\n  seen.add(key);\n  return false;\n});\n\n// 8. Check missing metadata\nconst invalidDocuments = processedDocuments.filter(\n  item =>\n    !item.spec_path ||\n    !item.document_type ||\n    !item.commit_id\n);\n\n// 9. Check commit consistency\nconst commitMismatches = processedDocuments.filter(\n  item => {\n    const expected = expectedDocuments.find(\n      doc => makeKey(doc) === makeKey(item)\n    );\n\n    return (\n      expected &&\n      item.commit_id !== expected.commit_id\n    );\n  }\n);\n\n// 10. Check document IDs for new uploads\nconst missingDocIds = processedDocuments.filter(\n  item =>\n    item.status === 'SUCCESS' &&\n    !item.doc_id\n);\n\n// 11. Final validation\nconst allSuccessful =\n  expectedCount > 0 &&\n  processedCount === expectedCount &&\n  uploadedCount + skippedCount === expectedCount &&\n  failedCount === 0 &&\n  expectedSet.size === expectedCount &&\n  processedSet.size === expectedCount &&\n  missingDocuments.length === 0 &&\n  unexpectedDocuments.length === 0 &&\n  duplicateDocuments.length === 0 &&\n  invalidDocuments.length === 0 &&\n  commitMismatches.length === 0 &&\n  missingDocIds.length === 0;\n\n// 12. Return summary\nreturn [{\n  json: {\n    pipelineId: config.repoName,\n    currentCommit: commitInfo.currentCommitSha,\n\n    expectedCount,\n    processedCount,\n\n    uploadedCount,\n    skippedCount,\n    failedCount,\n    timeoutCount,\n\n    missingDocuments,\n    unexpectedDocuments,\n    duplicateDocuments,\n    invalidDocuments,\n    commitMismatches,\n    missingDocIds,\n\n    allSuccessful,\n\n    checkedAt: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4016,
+        -80
+      ],
+      "id": "7f5c6e86-4a1b-43e3-a638-5f38334f22ed",
+      "name": "Check Upload Results"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dd97b8b8-129f-43d0-a68b-6d760105271f",
+              "leftValue": "={{ $json.allSuccessful }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4240,
+        -288
+      ],
+      "id": "c399ca8c-859b-4064-bab6-7321a62bdf0f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "spec_kb_audit",
+        "columns": {
+          "column": [
+            {
+              "name": "pipeline_id"
+            },
+            {
+              "name": "commit_id"
+            },
+            {
+              "name": "spec_path"
+            },
+            {
+              "name": "spec_name"
+            },
+            {
+              "name": "document_type"
+            },
+            {
+              "name": "kb_url"
+            },
+            {
+              "name": "target_version"
+            },
+            {
+              "name": "doc_id"
+            },
+            {
+              "name": "status"
+            },
+            {
+              "name": "error_message"
+            },
+            {
+              "name": "processed_at",
+              "type": "date"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        928,
+        -336
+      ],
+      "id": "a4a253df-6193-4268-8271-621785d41ab6",
+      "name": "Create Audit Log"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "wLp83q63U8tAK7rh"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4576,
+        80
+      ],
+      "id": "04df0ae7-b359-4893-8e00-f4c106fef0c1",
+      "name": "Save Audit Log"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "IYZUc78QUCkjiuqY"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=id",
+              "condition": "=eq",
+              "keyValue": "={{ $json.pipeline_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "dryRun": false
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4912,
+        -64
+      ],
+      "id": "896ecfa0-c0e6-460d-be9b-b1568062a898",
+      "name": "Update Tracker"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        3088,
+        -688
+      ],
+      "id": "119d8f7f-1b59-4bd7-9911-fc24adc049d5",
+      "name": "Limit",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst config = $('Pipeline Config').first().json;\n\nconst kbUrls = {\n  BRS: config.brsKbUrl,\n  SRS: config.srsKbUrl,\n  SDS: config.sdsKbUrl\n};\n\nreturn $input.all().map((item, index) => {\n  const data = item.json;\n  const type = String(data.documentType || '').toUpperCase();\n\n  const baseUrl = kbUrls[type];\n\n  if (!baseUrl) {\n    throw new Error(`KB URL not configured for: ${type}`);\n  }\n\n  return {\n    json: {\n      ...data,\n      documentType: type,\n      kbUrl: baseUrl.replace(/\\/$/, ''),\n      uploadUrl:\n        `${baseUrl.replace(/\\/$/, '')}/api/v1/documents/upload`\n    },\n    pairedItem: { item: index }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2928,
+        -32
+      ],
+      "id": "2799af0d-54c8-410f-81d5-4a2f12dcd479",
+      "name": "Resolve KB Target"
+    },
+    {
+      "parameters": {
+        "errorMessage": "Error occured"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        4640,
+        -432
+      ],
+      "id": "4fbe1a9f-6616-4d11-91ad-8aef3ad49c5b",
+      "name": "Stop and Error"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.uploadUrl }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "version",
+              "value": "v2.14"
+            },
+            {
+              "name": "mode",
+              "value": "md"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4112,
+        80
+      ],
+      "id": "2abaf7ae-2cb4-4f06-a570-33c60d089231",
+      "name": "Upload Spec to KB",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "ZkWehRVx5tvwzGAf",
+          "name": "KB test"
+        },
+        "httpHeaderAuth": {
+          "id": "doB1JZKxB6L1ew8V",
+          "name": "Header Auth account"
+        },
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "34cdaf76-423e-460e-92e0-4c33d6c30b91",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipelineId }}",
+              "type": "string"
+            },
+            {
+              "id": "52d05abb-97b6-481b-bbb1-fc6991724e07",
+              "name": "last_processed_commit",
+              "value": "={{ $json.currentCommit }}",
+              "type": "string"
+            },
+            {
+              "id": "e0eecb5a-5ea8-43e2-8195-6706e084640f",
+              "name": "updated_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4560,
+        -80
+      ],
+      "id": "f5995a94-cb0d-4b40-9c9f-3f40d766a8a3",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://keycloak-cognia.dnext-ai.link/realms/cognia/protocol/openid-connect/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            },
+            {
+              "name": "scope",
+              "value": "email profile"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        176,
+        -240
+      ],
+      "id": "ee20c4f8-453c-45cd-89bd-68a5c3a0a43f",
+      "name": "Get Access Token",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        },
+        "httpBasicAuth": {
+          "id": "F1McGYG8FFs7Gqlx",
+          "name": "Keycloack test"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://cognia-kb-brs.dnext-ai.link/api/v1/documents",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Access Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        528,
+        -448
+      ],
+      "id": "3e5ea3c8-638d-4ed8-b7b1-21bb78721110",
+      "name": "Test Cognia KB Bearer",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst token = $('Get Access Token').first().json.access_token;\n\nif (!token || token.split('.').length !== 3) {\n  throw new Error('JWT access token bulunamadı');\n}\n\nconst payload = token.split('.')[1];\nconst claims = JSON.parse(\n  Buffer.from(payload, 'base64url').toString('utf8')\n);\n\nreturn [{\n  json: {\n    issuer: claims.iss,\n    audience: claims.aud,\n    authorizedParty: claims.azp,\n    issuedAt: claims.iat\n      ? new Date(claims.iat * 1000).toISOString()\n      : null,\n    expiresAt: claims.exp\n      ? new Date(claims.exp * 1000).toISOString()\n      : null,\n    scope: claims.scope,\n    clientRoles: Object.keys(claims.resource_access || {}),\n    realmRoles: claims.realm_access?.roles || [],\n    expired: claims.exp\n      ? Date.now() >= claims.exp * 1000\n      : null\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        -400
+      ],
+      "id": "3f6613a9-f571-4c22-b865-049c095c7795",
+      "name": "Inspect Token Claims"
+    },
+    {
+      "parameters": {
+        "url": "https://keycloak-cognia.dnext-ai.link/realms/cognia/protocol/openid-connect/userinfo",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Access Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        -224
+      ],
+      "id": "f728434c-3fc8-414b-ac1e-eca0ad77fde7",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b6ca28a7-bceb-47a9-81fc-98a2a6ddfba6",
+              "name": "uploadUrl",
+              "value": "={{ $('Resolve KB Target').item.json.uploadUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "ce8ea48b-251e-4ae5-a61b-59ffa9c6258c",
+              "name": "pipeline_id",
+              "value": "={{ $('Pipeline Config').first().json.repoName }}",
+              "type": "string"
+            },
+            {
+              "id": "cf067896-cdef-4d09-a06e-83435f24ab35",
+              "name": "spec_path",
+              "value": "={{ $('Resolve KB Target').item.json.sourcePath }}",
+              "type": "string"
+            },
+            {
+              "id": "bb5e5677-1075-47fc-810b-90513b72453a",
+              "name": "document_type",
+              "value": "={{ $('Resolve KB Target').item.json.documentType }}",
+              "type": "string"
+            },
+            {
+              "id": "384bd809-0f30-4fb7-af50-c69e7f4c4208",
+              "name": "target_version",
+              "value": "v2.14",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3488,
+        80
+      ],
+      "id": "fb70a889-cb99-4665-b2bb-68ed909b8e8d",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        3328,
+        -32
+      ],
+      "id": "866d31a2-d4b4-4f2b-b184-b386645d010a",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_kb_audit",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=pipeline_id",
+              "condition": "=eq",
+              "keyValue": "={{ $json.pipeline_id }}"
+            },
+            {
+              "keyName": "=spec_path",
+              "condition": "=eq",
+              "keyValue": "={{ $json.spec_path }}"
+            },
+            {
+              "keyName": "=document_type",
+              "condition": "=eq",
+              "keyValue": "={{ $json.document_type }}"
+            },
+            {
+              "keyName": "=target_version",
+              "condition": "=eq",
+              "keyValue": "v2.14"
+            },
+            {
+              "keyName": "=status",
+              "condition": "=eq",
+              "keyValue": "SUCCESS"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3648,
+        80
+      ],
+      "id": "183cb58d-3eca-43a7-b528-9dc0e87e4e31",
+      "name": "Check Existing Upload",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e4470c5c-546f-44e7-878d-8362a427f088",
+              "leftValue": "={{ Boolean($json.doc_id && $json.status === 'SUCCESS') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3712,
+        368
+      ],
+      "id": "05591af7-9a20-4756-a5f8-fbd9d07d8fdc",
+      "name": "Already Uploaded?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Edit Fields1').all();\n\nif (original.length !== 1) {\n  throw new Error(\n    `Expected one item in current loop, got ${original.length}`\n  );\n}\n\nconst item = original[0];\n\nif (!item.binary?.data) {\n  throw new Error('Missing binary.data');\n}\n\nreturn [{\n  json: item.json,\n  binary: item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3920,
+        80
+      ],
+      "id": "aafadf63-a16f-47ec-9bad-628129a1dc00",
+      "name": "Restore Upload Item"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f188d9d2-a7f2-43d0-bbed-d03963f8ad0d",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "40516602-e4e2-4f24-b24d-fcbb2303693a",
+              "name": "status",
+              "value": "SKIPPED",
+              "type": "string"
+            },
+            {
+              "id": "708aaeaf-4b87-4544-875e-aa91887b0a2a",
+              "name": "doc_id",
+              "value": "={{ $json.doc_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4016,
+        352
+      ],
+      "id": "4fdd4f01-6b1b-47e9-8cb9-8425dcf041c2",
+      "name": "Mark as Skipped"
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4736,
+        80
+      ],
+      "id": "473b7459-9efd-485c-a205-ba8118fb59cb",
+      "name": "Wait",
+      "webhookId": "3e1cabda-d47a-4427-9316-6561db30e460"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Pipeline Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pipeline Config": {
+      "main": [
+        [
+          {
+            "node": "Get Latest Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Latest Commit": {
+      "main": [
+        [
+          {
+            "node": "Normalize Commit Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Commit Info": {
+      "main": [
+        [
+          {
+            "node": "Get Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tracker": {
+      "main": [
+        [
+          {
+            "node": "Is New Commit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Previous Commit": {
+      "main": [
+        [
+          {
+            "node": "Extract Previous Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Commit?": {
+      "main": [
+        [
+          {
+            "node": "Compare Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Commits": {
+      "main": [
+        [
+          {
+            "node": "Filter Relevant Spec Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Relevant Spec Changes": {
+      "main": [
+        [
+          {
+            "node": "Has Relevant Changes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Relevant Changes?": {
+      "main": [
+        [
+          {
+            "node": "Split Relevant Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Relevant Files": {
+      "main": [
+        [
+          {
+            "node": "Identify Master Spec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identify Master Spec": {
+      "main": [
+        [
+          {
+            "node": "Get Spec Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Spec Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare KB Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare KB Payload": {
+      "main": [
+        [
+          {
+            "node": "Resolve KB Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [],
+        []
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit Record": {
+      "main": [
+        [
+          {
+            "node": "Save Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Upload Results": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Audit Log": {
+      "main": [
+        []
+      ]
+    },
+    "Save Audit Log": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Update Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        []
+      ]
+    },
+    "Resolve KB Target": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Spec to KB": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Audit Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Update Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Access Token": {
+      "main": [
+        [
+          {
+            "node": "Inspect Token Claims",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inspect Token Claims": {
+      "main": [
+        [
+          {
+            "node": "Test Cognia KB Bearer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        []
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Check Upload Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Tracker": {
+      "main": [
+        []
+      ]
+    },
+    "Check Existing Upload": {
+      "main": [
+        [
+          {
+            "node": "Already Uploaded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Uploaded?": {
+      "main": [
+        [
+          {
+            "node": "Mark as Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Restore Upload Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Upload Item": {
+      "main": [
+        [
+          {
+            "node": "Upload Spec to KB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Skipped": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "abe64e8d-c4c1-47c4-b953-41be0b4fd6cc",
+  "meta": {
+    "instanceId": "9f6a250b5e41057ebc46f16e9a43e0df40b68d425919a02fddb29ca567a38e97"
+  },
+  "id": "71yTcBrIKHYG4WPNLuNIn",
+  "tags": []
+}
