@@ -1,0 +1,2339 @@
+{
+  "name": "Recovery Workflow: Pipeline for uploading new Reference BRS-SRS-SDS specs to KBs",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        464,
+        0
+      ],
+      "id": "7a74f762-65f4-4186-ace4-19540bcf46f1",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_refkb_audit",
+          "mode": "name"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        656,
+        0
+      ],
+      "id": "04ca0709-ad3f-4343-bb68-3d453f032289",
+      "name": "Get Recovery Audit Records"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst records = $input.all().map(item => item.json);\n\n// 1. Eksik veya geçersiz audit kayıtlarını çıkar\nconst validRecords = records.filter(r =>\n  r.pipeline_id &&\n  r.commit_id &&\n  r.spec_path &&\n  r.document_type &&\n  r.kb_url &&\n  r.target_version &&\n  r.status\n);\n\n// 2. Her doküman + commit + versiyon için\n// en güncel audit kaydını belirle\nconst latestByDocument = new Map();\n\nfor (const record of validRecords) {\n  const key = JSON.stringify([\n    record.pipeline_id,\n    record.commit_id,\n    record.spec_path,\n    record.document_type,\n    record.kb_url,\n    record.target_version\n  ]);\n\n  const existing = latestByDocument.get(key);\n\n  const recordTime = Date.parse(\n    record.processed_at ||\n    record.updatedAt ||\n    record.createdAt ||\n    ''\n  ) || 0;\n\n  const existingTime = existing\n    ? (Date.parse(\n        existing.processed_at ||\n        existing.updatedAt ||\n        existing.createdAt ||\n        ''\n      ) || 0)\n    : -1;\n\n  if (\n    !existing ||\n    recordTime > existingTime ||\n    (recordTime === existingTime &&\n      Number(record.id || 0) > Number(existing.id || 0))\n  ) {\n    latestByDocument.set(key, record);\n  }\n}\n\n// 3. Sadece recovery gerektiren kayıtları seç\nconst recoveryStatuses = new Set([\n  'FAILED',\n  'TIMEOUT',\n  'PENDING_REVIEW'\n]);\n\nconst candidates = [...latestByDocument.values()]\n  .filter(r =>\n    recoveryStatuses.has(\n      String(r.status).trim().toUpperCase()\n    )\n  );\n\n// 4. Sonuçları sonraki node'lara aktar\nreturn candidates.map(record => ({\n  json: {\n    ...record,\n    original_status: String(record.status).toUpperCase(),\n    recovery_action: 'VERIFY_KB',\n    recovery_required: true\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        0
+      ],
+      "id": "1a19e70d-cadc-45c7-af4b-a078a599f0eb",
+      "name": "Select Recovery Candidates"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "e196b2bb-a2e9-4867-a3e7-75844f0d20b9",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.kb_url + '/api/v1/documents' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "={{ $json.target_version }}"
+            },
+            {
+              "name": "name_filter",
+              "value": "={{ $json.spec_path.split('/').pop().replace(/\\.md$/i, '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1248,
+        96
+      ],
+      "id": "d5503c3c-9b8b-4922-994b-3613ffa44fa8",
+      "name": "Check KB Documents",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst source = $('Loop Over Items').item.json;\n\nconst documents = Array.isArray(response.body)\n  ? response.body\n  : Array.isArray(response.body?.documents)\n    ? response.body.documents\n    : [];\n\n// spec_name yerine gerçek dosya adını kullan\nconst expectedName = String(source.spec_path || '')\n  .split('/')\n  .pop()\n  .replace(/\\.md$/i, '')\n  .trim()\n  .toLowerCase();\n\nconst matches = documents.filter(doc =>\n  String(doc.doc_name || '')\n    .trim()\n    .toLowerCase() === expectedName\n);\n\nlet verificationStatus;\n\nif (response.statusCode !== 200) {\n  verificationStatus = 'CHECK_FAILED';\n} else if (matches.length === 1) {\n  verificationStatus = 'FOUND_IN_KB';\n} else if (matches.length > 1) {\n  verificationStatus = 'AMBIGUOUS';\n} else {\n  verificationStatus = 'NOT_FOUND';\n}\n\nconst existingDoc =\n  verificationStatus === 'FOUND_IN_KB'\n    ? matches[0]\n    : null;\n\nreturn {\n  json: {\n    ...source,\n    verification_status: verificationStatus,\n    found_in_kb: Boolean(existingDoc),\n    existing_doc_id: existingDoc?.doc_id || '',\n    existing_doc_md5: existingDoc?.md5 || '',\n    existing_doc_path: existingDoc?.path || '',\n    matching_documents: matches.length,\n    http_status: response.statusCode\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        96
+      ],
+      "id": "c5c6d211-9e55-4dfb-a999-ed2cc8c8f660",
+      "name": "Verify KB Document"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.kb_url + '/api/v1/documents/jobs' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1840,
+        480
+      ],
+      "id": "d5eaae26-64e3-43ba-a206-f3a9cceba341",
+      "name": "Check Active Jobs",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst source = $('Verify KB Document').item.json;\n\nconst jobs = Array.isArray(response.body)\n  ? response.body\n  : Array.isArray(response.body?.jobs)\n    ? response.body.jobs\n    : [];\n\nconst expectedFile = source.spec_path\n  .split('/')\n  .pop()\n  .toLowerCase();\n\nconst matchingJobs = jobs.filter(job =>\n  String(job.file_name || '').toLowerCase() === expectedFile &&\n  String(job.version || '') === String(source.target_version)\n);\n\nconst completedJobs = matchingJobs.filter(job =>\n  String(job.status || '').toLowerCase() === 'done' &&\n  Boolean(job.doc_id)\n);\n\nconst activeJobs = matchingJobs.filter(job =>\n  ['pending', 'queued', 'running', 'processing', 'in_progress']\n    .includes(String(job.status || '').toLowerCase())\n);\n\nlet recoveryDecision = 'MANUAL_REVIEW';\nlet recoveredDocId = '';\n\nif (response.statusCode !== 200) {\n  recoveryDecision = 'JOB_CHECK_FAILED';\n} else if (activeJobs.length > 0) {\n  recoveryDecision = 'WAIT_FOR_JOB';\n} else if (completedJobs.length > 0) {\n  const ids = [...new Set(completedJobs.map(job => job.doc_id))];\n\n  if (ids.length === 1) {\n    recoveryDecision = 'VERIFY_COMPLETED_DOC';\n    recoveredDocId = ids[0];\n  } else {\n    recoveryDecision = 'MANUAL_REVIEW';\n  }\n} else if (matchingJobs.length === 0) {\n  recoveryDecision = 'JOB_NOT_FOUND';\n} else {\n  recoveryDecision = 'MANUAL_REVIEW';\n}\n\nreturn {\n  json: {\n    ...source,\n    matching_job_count: matchingJobs.length,\n    completed_job_count: completedJobs.length,\n    active_job_count: activeJobs.length,\n    recovered_doc_id: recoveredDocId,\n    recovery_decision: recoveryDecision\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        480
+      ],
+      "id": "24ccc347-cf93-4f67-bec2-d285d4c68dc3",
+      "name": "Evaluate Recovery Jobs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6cc5f0c8-b15f-4256-a349-57a87f475dfc",
+              "leftValue": "={{ $json.found_in_kb }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1664,
+        96
+      ],
+      "id": "e82e2fd9-4854-41d0-a0fe-cbd5b9f998d9",
+      "name": "Found in KB?"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/dnext-technology/dnext-product-docs/contents/' + $json.spec_path.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent($json.commit_id) }}\n",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1872,
+        0
+      ],
+      "id": "f6c1c51b-80d2-4098-a04a-9fb32d631300",
+      "name": "Get Source File from GitHub",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst crypto = require('crypto');\n\nconst response = $json;\nconst githubFile = response.body ?? response;\n\nconst source = $('Verify KB Document').item.json;\n\nif (githubFile.encoding !== 'base64' || !githubFile.content) {\n  throw new Error('GitHub dosya içeriği Base64 formatında değil.');\n}\n\n// GitHub Base64 içeriğini gerçek byte'lara dönüştür\nconst fileBuffer = Buffer.from(\n  githubFile.content.replace(/\\s/g, ''),\n  'base64'\n);\n\n// MD5 hesapla\nconst sourceMd5 = crypto\n  .createHash('md5')\n  .update(fileBuffer)\n  .digest('hex');\n\nconst kbMd5 = String(source.existing_doc_md5 || '')\n  .toLowerCase();\n\nconst md5Matches = sourceMd5 === kbMd5;\n\nreturn {\n  json: {\n    ...source,\n    github_blob_sha: githubFile.sha,\n    github_file_size: fileBuffer.length,\n    source_md5: sourceMd5,\n    kb_md5: kbMd5,\n    md5_matches: md5Matches,\n    recovery_decision: md5Matches\n      ? 'ALREADY_INDEXED'\n      : 'CONTENT_MISMATCH'\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        0
+      ],
+      "id": "844ac120-2709-488f-aa99-ce2ff1051970",
+      "name": "Compare Source MD5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5aee5bbf-dc6f-4a93-9c99-6aee8823cd78",
+              "leftValue": "={{ $json.recovery_decision === 'ALREADY_INDEXED' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2288,
+        0
+      ],
+      "id": "49d64051-fcdc-4a9f-9f22-f91570d1a334",
+      "name": "Already Indexed?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "SUCCESS",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "Recovered: Reference KB content matches GitHub source MD5. Original upload execution outcome is unverified.",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2496,
+        -32
+      ],
+      "id": "afa71926-ba6c-47d8-a74e-cff7b865da9c",
+      "name": "Prepare Recovered Audit"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_refkb_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4032,
+        -48
+      ],
+      "id": "ee514847-f66c-43c3-911e-1ba51a8ae6ef",
+      "name": "Save Recovered Audit"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "={{ 'CONTENT_MISMATCH: GitHub MD5=' + $json.source_md5 + ', KB MD5=' + $json.kb_md5 }}",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2480,
+        160
+      ],
+      "id": "88b6704f-9790-491e-aea7-4421ac9d90b5",
+      "name": "Prepare Content Mismatch"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "WAIT_FOR_JOB",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "607df18a-cf24-4fa5-b7c5-b2570aebf8e7"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "WAIT"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "484beb18-b81f-4363-b7a0-f18510e1134f",
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "VERIFY_COMPLETED_DOC",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "VERIFY"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "80fafa54-23d8-455d-b84b-6962233cdbcc",
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "JOB_NOT_FOUND",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NOT_FOUND"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7ccc3ca3-bc70-4e92-8d97-cca533d52abf",
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "JOB_CHECK_FAILED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CHECK_FAILED"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "65949f67-57ac-46a0-bb65-8b5d3298e223",
+                    "leftValue": "={{ $json.recovery_decision }}",
+                    "rightValue": "MANUAL_REVIEW",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "MANUAL_REVIEW"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2272,
+        688
+      ],
+      "id": "81358a71-c06d-4770-85be-fe032d64a20f",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.kb_url + '/api/v1/documents' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "={{ $json.target_version }}"
+            },
+            {
+              "name": "name_filter",
+              "value": "={{ $json.spec_path.split('/').pop().replace(/\\.md$/i, '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2960,
+        496
+      ],
+      "id": "c3ef5329-7c7e-44ab-b05e-e3389096ab59",
+      "name": "Recheck KB Document",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "Recovery: backend indexing job is still active",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2496,
+        352
+      ],
+      "id": "e3228117-bf98-43f3-aec9-0a6044430663",
+      "name": "Prepare Waiting Audit"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst source = $('Evaluate Recovery Jobs').item.json;\n\nconst documents = Array.isArray(response.body)\n  ? response.body\n  : [];\n\nconst expectedName = String(source.spec_path || '')\n  .split('/')\n  .pop()\n  .replace(/\\.md$/i, '')\n  .toLowerCase();\n\nconst matches = documents.filter(doc =>\n  String(doc.doc_name || '').toLowerCase() === expectedName &&\n  String(doc.doc_id || doc.id || '') ===\n    String(source.recovered_doc_id || '')\n);\n\nconst verified =\n  response.statusCode === 200 &&\n  matches.length === 1 &&\n  Boolean(matches[0]?.md5);\n\nconst doc = verified ? matches[0] : null;\n\nreturn {\n  json: {\n    ...source,\n    verification_status: verified\n      ? 'FOUND_IN_KB'\n      : 'NOT_VERIFIED',\n    found_in_kb: verified,\n    existing_doc_id: doc?.doc_id || '',\n    existing_doc_md5: doc?.md5 || '',\n    existing_doc_path: doc?.path || '',\n    matching_documents: matches.length,\n    http_status: response.statusCode\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3168,
+        496
+      ],
+      "id": "93e7b004-6378-4e9d-829b-8182e9956782",
+      "name": "Verify Rechecked Document"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e660b3f8-59a9-49b0-bdd9-92b42ffa2e62",
+              "leftValue": "={{ $json.found_in_kb }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3376,
+        496
+      ],
+      "id": "1568afd3-cdd8-4523-94c0-69ac1c7e2987",
+      "name": "Document Verified?"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/reposdnext-technology/dnext-product-docs/contents/' + $json.spec_path.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent($json.commit_id) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3680,
+        480
+      ],
+      "id": "255d391d-ac6b-4f73-8de6-b1bbeb241e7e",
+      "name": "Get Source File from GitHub1",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "fda2ca8e-6609-4685-ac3b-acfcca039b7a",
+              "name": "doc_id",
+              "value": "={{ '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "Recovery: no matching job found; indexing outcome unknown",
+              "type": "string"
+            },
+            {
+              "id": "199f3b5e-bbab-4990-bf3a-6ec6e084f7e7",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3008,
+        752
+      ],
+      "id": "c6fc0a78-9915-4974-ba06-0f603cceec2d",
+      "name": "Prepare Job Not Found"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "fda2ca8e-6609-4685-ac3b-acfcca039b7a",
+              "name": "doc_id",
+              "value": "{{ '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "Recovery: job status API check failed",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3184,
+        736
+      ],
+      "id": "3ea865d3-bc40-4fa5-8d55-9a0fee1206e4",
+      "name": "Prepare Check Failed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "fda2ca8e-6609-4685-ac3b-acfcca039b7a",
+              "name": "doc_id",
+              "value": "={{ $json.recovered_doc_id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "={{ 'Recovery: manual review required; decision=' + $json.recovery_decision }}",
+              "type": "string"
+            },
+            {
+              "id": "37f096af-6b18-413e-a8e0-69c55e33ea0b",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3392,
+        784
+      ],
+      "id": "1789f89c-3079-4ddf-a15e-fccb93d91b1e",
+      "name": "Prepare Manual Review"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst crypto = require('crypto');\n\nconst response = $json;\nconst githubFile = response.body ?? response;\n\nconst source = $('Verify Rechecked Document').item.json;\n\nif (githubFile.encoding !== 'base64' || !githubFile.content) {\n  throw new Error('GitHub dosya içeriği Base64 formatında değil.');\n}\n\n// GitHub Base64 içeriğini gerçek byte'lara dönüştür\nconst fileBuffer = Buffer.from(\n  githubFile.content.replace(/\\s/g, ''),\n  'base64'\n);\n\n// MD5 hesapla\nconst sourceMd5 = crypto\n  .createHash('md5')\n  .update(fileBuffer)\n  .digest('hex');\n\nconst kbMd5 = String(source.existing_doc_md5 || '')\n  .toLowerCase();\n\nconst md5Matches = sourceMd5 === kbMd5;\n\nreturn {\n  json: {\n    ...source,\n    github_blob_sha: githubFile.sha,\n    github_file_size: fileBuffer.length,\n    source_md5: sourceMd5,\n    kb_md5: kbMd5,\n    md5_matches: md5Matches,\n    recovery_decision: md5Matches\n      ? 'ALREADY_INDEXED'\n      : 'CONTENT_MISMATCH'\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3888,
+        480
+      ],
+      "id": "0c54be9c-1ab0-4333-9370-46538f237449",
+      "name": "Compare Source MD5 1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.existing_doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "={{ 'Recovery: completed job could not be verified in KB; doc_id=' + ($json.recovered_doc_id || 'unknown') }}",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3696,
+        688
+      ],
+      "id": "430adba0-613c-4ab6-9b18-e0925c721f46",
+      "name": "Prepare Verification Failed"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst record = $json;\n\nconst requiredFields = [\n  'pipeline_id',\n  'commit_id',\n  'spec_path',\n  'spec_name',\n  'document_type',\n  'kb_url',\n  'target_version',\n  'status'\n];\n\nconst missingFields = requiredFields.filter(field =>\n  record[field] === undefined ||\n  record[field] === null ||\n  String(record[field]).trim() === ''\n);\n\nif (missingFields.length > 0) {\n  throw new Error(\n    'Missing required audit fields: ' +\n    missingFields.join(', ')\n  );\n}\n\n// Yalnızca spec_refkb_audit tablosundaki sütunları döndür\nreturn {\n  json: {\n    pipeline_id: record.pipeline_id,\n    commit_id: record.commit_id,\n    spec_path: record.spec_path,\n    spec_name: record.spec_name,\n    document_type: record.document_type,\n    kb_url: record.kb_url,\n    target_version: record.target_version,\n    doc_id: String(record.doc_id ?? '').replace(/^['\"]+|['\"]+$/g, '').trim(),\n    status: String(record.status).toUpperCase(),\n    error_message: record.error_message || '',\n    processed_at: new Date().toISOString()\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        -32
+      ],
+      "id": "e1ce3801-308a-4f15-8b2d-3e5c3c900e79",
+      "name": "Normalize Recovery Audit"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst history = $input.all()\n  .map(item => item.json)\n  .filter(row => row && row.spec_path && row.status);\n\nconst runIndex = $runIndex;\n\nconst newRecord = $('Normalize Recovery Audit')\n  .all(0, runIndex)[0]?.json;\n\nif (!newRecord) {\n  throw new Error(\n    `New recovery audit record missing at run ${runIndex}`\n  );\n}\n\nconst norm = value =>\n  String(value ?? '')\n    .replace(/^['\"]+|['\"]+$/g, '')\n    .trim();\n\nconst matchingHistory = history.filter(row =>\n  norm(row.pipeline_id) === norm(newRecord.pipeline_id) &&\n  norm(row.commit_id) === norm(newRecord.commit_id) &&\n  norm(row.spec_path) === norm(newRecord.spec_path) &&\n  norm(row.target_version) === norm(newRecord.target_version)\n);\n\nconst duplicate = matchingHistory.find(row =>\n  norm(row.status).toUpperCase() ===\n    norm(newRecord.status).toUpperCase() &&\n  norm(row.doc_id) === norm(newRecord.doc_id) &&\n  norm(row.error_message) === norm(newRecord.error_message)\n);\n\nreturn [{\n  json: {\n    ...newRecord,\n    should_save: !duplicate,\n    audit_action: duplicate\n      ? 'SKIP_DUPLICATE'\n      : 'INSERT',\n    previous_audit_id: duplicate?.id ?? null\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3408,
+        -32
+      ],
+      "id": "bbb4d24a-ab72-4599-b244-7bd2105274d6",
+      "name": "Should Save Recovery Audit?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4d919e0b-2f65-4aa7-9034-3deb7294e043",
+              "leftValue": "={{ $json.should_save }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3600,
+        -32
+      ],
+      "id": "dc3fefaf-456a-42ff-b7b6-faac51a8ce11",
+      "name": "Save New Audit?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aed68c93-4c97-421b-be30-3a58b7c2d1db",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipeline_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c43af6bc-d433-4df7-b7bd-9e872e3b15e1",
+              "name": "commit_id",
+              "value": "={{ $json.commit_id }}",
+              "type": "string"
+            },
+            {
+              "id": "9ac50f99-436d-4ba4-b014-e7c202ba8960",
+              "name": "spec_path",
+              "value": "={{ $json.spec_path }}",
+              "type": "string"
+            },
+            {
+              "id": "e26715e8-008b-4611-84ea-211184e92109",
+              "name": "spec_name",
+              "value": "={{ $json.spec_name }}",
+              "type": "string"
+            },
+            {
+              "id": "6782f979-1e4c-451d-94eb-6351121d6543",
+              "name": "document_type",
+              "value": "={{ $json.document_type }}",
+              "type": "string"
+            },
+            {
+              "id": "ad5b39ad-c53a-46cd-b232-4f38fe8a4556",
+              "name": "kb_url",
+              "value": "={{ $json.kb_url }}",
+              "type": "string"
+            },
+            {
+              "id": "226ad8ec-642d-4a4f-8ee8-df0762bef568",
+              "name": "target_version",
+              "value": "={{ $json.target_version }}",
+              "type": "string"
+            },
+            {
+              "id": "c0f57cc5-cf30-4f5b-aa4b-6ff336838cf5",
+              "name": "doc_id",
+              "value": "={{ $json.doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "29c81dc2-fb72-4b68-8f04-5c6ca6c25043",
+              "name": "status",
+              "value": "={{ $json.status }}",
+              "type": "string"
+            },
+            {
+              "id": "74eef3e0-1d70-4652-b016-48439abf7af6",
+              "name": "error_message",
+              "value": "={{ $json.error_message }}",
+              "type": "string"
+            },
+            {
+              "id": "4e7053da-bcba-4f37-8444-c46a0260bf9e",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3808,
+        -48
+      ],
+      "id": "f5f131f7-ee8c-44e7-8a53-4e8d7f867870",
+      "name": "Prepare Final Audit Row"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_refkb_audit",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=pipeline_id",
+              "condition": "=eq",
+              "keyValue": "={{ $json.pipeline_id }}"
+            },
+            {
+              "keyName": "=commit_id",
+              "condition": "=eq",
+              "keyValue": "={{ $json.commit_id }}"
+            },
+            {
+              "keyName": "=spec_path",
+              "condition": "=eq",
+              "keyValue": "={{ $json.spec_path }}"
+            },
+            {
+              "keyName": "=target_version",
+              "condition": "=eq",
+              "keyValue": "={{ $json.target_version }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3200,
+        -32
+      ],
+      "id": "3a1b908a-2b15-4856-a456-d8f7f05d8653",
+      "name": "Check Existing Recovery Audit",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst rows = $input.all()\n  .map(item => item.json)\n  .filter(r =>\n    r.pipeline_id &&\n    r.commit_id &&\n    r.spec_path &&\n    r.target_version\n  );\n\nconst groups = new Map();\n\nfor (const row of rows) {\n  const key = JSON.stringify([\n    row.pipeline_id,\n    row.commit_id,\n    row.spec_path,\n    row.target_version\n  ]);\n\n  if (!groups.has(key)) groups.set(key, []);\n  groups.get(key).push(row);\n}\n\nconst duplicates = [];\n\nfor (const [key, records] of groups.entries()) {\n  records.sort((a, b) =>\n    Number(a.id || 0) - Number(b.id || 0)\n  );\n\n  for (let i = 1; i < records.length; i++) {\n    const previous = records[i - 1];\n    const current = records[i];\n\n    const same =\n      String(previous.status || '') === String(current.status || '') &&\n      String(previous.doc_id || '') === String(current.doc_id || '') &&\n      String(previous.error_message || '') ===\n        String(current.error_message || '');\n\n    if (same) {\n      duplicates.push({\n        spec_path: current.spec_path,\n        previous_id: previous.id,\n        duplicate_id: current.id,\n        status: current.status\n      });\n    }\n  }\n}\n\nreturn [{\n  json: {\n    total_rows: $input.all().length,\n    valid_rows: rows.length,\n    duplicate_count: duplicates.length,\n    duplicates\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -800
+      ],
+      "id": "1bac73ab-b8ac-447a-9abc-ca035bac995d",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst r = $json;\n\nconst normalize = v => String(v ?? '').trim();\n\nconst isNotFound =\n  r.verification_status === 'NOT_FOUND' &&\n  r.found_in_kb === false &&\n  Number(r.matching_documents ?? 0) === 0;\n\nconst noMatchingJobs =\n  Number(r.matching_job_count ?? 0) === 0 &&\n  Number(r.active_job_count ?? 0) === 0 &&\n  Number(r.completed_job_count ?? 0) === 0;\n\nconst validSourceMetadata =\n  /(?:^|\\/)(BRS|SRS|SDS)\\/Reference\\/[^/]+\\.md$/i.test(\n    normalize(r.spec_path)\n  ) &&\n  Boolean(normalize(r.spec_name)) &&\n  ['BRS', 'SRS', 'SDS'].includes(\n    normalize(r.document_type).toUpperCase()\n  ) &&\n  normalize(r.target_version) === 'v2.13' &&\n  Boolean(normalize(r.commit_id)) &&\n  r.pipeline_id === 'dnext-product-docs-reference';\nconst eligible =\n  r.recovery_decision === 'JOB_NOT_FOUND' &&\n  Number(r.http_status) === 200 &&\n  isNotFound &&\n  noMatchingJobs &&\n  validSourceMetadata;\n\nreturn {\n  json: {\n    ...r,\n    retry_candidate: eligible,\n    retry_approved: false,\n    retry_decision: eligible\n      ? 'PRECHECK_REQUIRED'\n      : 'MANUAL_REVIEW',\n    retry_reason: eligible\n      ? 'No matching KB document or job; final checks required'\n      : 'Recovery conditions not satisfied'\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        992
+      ],
+      "id": "020f062c-366e-46fe-b406-ea52eb0356f9",
+      "name": "Evaluate Safe Retry Eligibility"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "468159da-3543-48c1-8171-d4774c01c8ab",
+              "leftValue": "={{ $json.retry_candidate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2816,
+        992
+      ],
+      "id": "2e57aff5-ee86-4624-8f99-55f8e671a308",
+      "name": "Safe Retry Eligible?"
+    },
+    {
+      "parameters": {
+        "url": "={{   'https://api.github.com/repos/dnext-technology/dnext-product-docs/contents/' +   $json.spec_path.split('/').map(encodeURIComponent).join('/') }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ref",
+              "value": "={{ $json.commit_id }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3024,
+        1056
+      ],
+      "id": "c27fc977-442e-4217-a4d4-878c0dfe934c",
+      "name": "Get Retry Source from GitHub",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst file = response.body ?? response;\n\nconst source = $('Safe Retry Eligible?').item.json;\n\nconst errors = [];\n\nif (response.statusCode !== undefined &&\n    response.statusCode !== 200) {\n  errors.push(`GitHub HTTP ${response.statusCode}`);\n}\n\nif (file.type && file.type !== 'file') {\n  errors.push('GitHub response is not a file');\n}\n\nif (file.path !== source.spec_path) {\n  errors.push('GitHub file path mismatch');\n}\n\nif (file.name !== source.spec_path.split('/').pop()) {\n  errors.push('GitHub filename mismatch');\n}\n\nif (file.encoding !== 'base64') {\n  errors.push('Expected base64 encoding');\n}\n\nif (!file.content || typeof file.content !== 'string') {\n  errors.push('Missing GitHub file content');\n}\n\nif (!file.sha) {\n  errors.push('Missing GitHub blob SHA');\n}\n\nreturn {\n  json: {\n    ...source,\n    github_file_name: file.name ?? '',\n    github_file_path: file.path ?? '',\n    github_blob_sha: file.sha ?? '',\n    github_file_size: file.size ?? 0,\n    github_encoding: file.encoding ?? '',\n    github_content_base64: file.content ?? '',\n    source_valid: errors.length === 0,\n    source_validation_errors: errors,\n    retry_approved: false\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3216,
+        1056
+      ],
+      "id": "04f55edd-8691-45c3-ba84-491c4f4d90e4",
+      "name": "Validate Retry Source"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8d6b1bac-991a-4fb6-8ed2-90abe30631a8",
+              "leftValue": "={{ $json.source_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3408,
+        1120
+      ],
+      "id": "62c53773-4945-41bf-9063-b15da989b184",
+      "name": "Source Valid?"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.kb_url + '/api/v1/documents' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "={{ $json.target_version }}"
+            },
+            {
+              "name": "name_filter",
+              "value": "={{ $json.spec_name }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3696,
+        1040
+      ],
+      "id": "95e42efe-7010-4b5a-b2b3-d3e53e1b8812",
+      "name": "Final KB Recheck",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        },
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst source = $('Validate Retry Source').item.json;\n\nconst httpOk = Number(response.statusCode) === 200;\n\nconst documents = Array.isArray(response.body)\n  ? response.body\n  : Array.isArray(response.body?.documents)\n    ? response.body.documents\n    : [];\n\nconst validBody =\n  Array.isArray(response.body) ||\n  Array.isArray(response.body?.documents);\n\nconst expectedName = String(source.spec_path || '')\n  .split('/')\n  .pop()\n  .replace(/\\.md$/i, '')\n  .trim()\n  .toLowerCase();\n\nconst matchingDocuments = documents.filter(doc => {\n  const name = String(\n    doc.doc_name ?? doc.name ?? doc.file_name ?? ''\n  )\n    .replace(/\\.md$/i, '')\n    .trim()\n    .toLowerCase();\n\n  const version = String(doc.version ?? '').trim();\n\n  const path = String(doc.path ?? '');\n  const versionMatches =\n    version === source.target_version ||\n    (!version && path.includes(\n      '/' + source.target_version + '/'\n    ));\n\n  return name === expectedName && versionMatches;\n});\n\nlet decision = 'MANUAL_REVIEW';\nlet reason = '';\n\nif (!httpOk) {\n  reason = `KB HTTP error: ${response.statusCode}`;\n} else if (!validBody) {\n  reason = 'Unexpected KB response format';\n} else if (matchingDocuments.length > 0) {\n  decision = 'SKIP_RETRY';\n  reason = 'Document already exists in Reference KB';\n} else if (documents.length > 0) {\n  reason = 'KB returned documents requiring identity review';\n} else {\n  decision = 'RETRY_PRECHECK_PASSED';\n  reason = 'No KB document found; proceed to retry preparation';\n}\n\nreturn {\n  json: {\n    ...source,\n    final_kb_http_status: response.statusCode,\n    final_kb_document_count: documents.length,\n    final_kb_matching_count: matchingDocuments.length,\n    final_kb_decision: decision,\n    final_kb_reason: reason,\n    retry_approved: false\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        1040
+      ],
+      "id": "20619c7a-8616-4be5-ad36-a819ae50c423",
+      "name": "Evaluate Final KB Recheck"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4808e5ee-81ea-478b-9960-f3f0fcf7c23f",
+              "leftValue": "={{ $json.retry_approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4352,
+        1024
+      ],
+      "id": "ad124e41-6437-4764-a62e-7a73f60678a2",
+      "name": "Safe to Retry?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst r = $json;\n\nconst sourceValid = r.source_valid === true;\nconst retryCandidate = r.retry_candidate === true;\n\nconst kbClear =\n  r.final_kb_http_status === 200 &&\n  r.final_kb_decision === 'RETRY_PRECHECK_PASSED' &&\n  r.final_kb_document_count === 0;\n\nconst jobsClear =\n  r.recovery_decision === 'JOB_NOT_FOUND' &&\n  r.http_status === 200 &&\n  r.matching_job_count === 0 &&\n  r.active_job_count === 0 &&\n  r.completed_job_count === 0;\n\nconst sourceReady =\n  typeof r.github_content_base64 === 'string' &&\n  r.github_content_base64.length > 0 &&\n  r.github_encoding === 'base64' &&\n  r.github_file_path === r.spec_path;\n\nconst safeToRetry =\n  sourceValid &&\n  retryCandidate &&\n  kbClear &&\n  jobsClear &&\n  sourceReady;\n\nreturn {\n  json: {\n    ...r,\n    retry_approved: safeToRetry,\n    retry_decision: safeToRetry\n      ? 'READY_FOR_UPLOAD'\n      : 'MANUAL_REVIEW',\n    retry_reason: safeToRetry\n      ? 'All retry prechecks passed'\n      : 'One or more retry prechecks failed'\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4128,
+        1040
+      ],
+      "id": "c5c5ab3d-3424-465f-986f-e96d29277d16",
+      "name": "Safe Retry Decision"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst r = $json;\n\nif (r.retry_approved !== true) {\n  throw new Error('Retry not approved');\n}\n\nif (r.source_valid !== true) {\n  throw new Error('Source validation failed');\n}\n\nif (!r.github_content_base64) {\n  throw new Error('GitHub content is missing');\n}\n\nconst base64 = r.github_content_base64.replace(/\\s/g, '');\nconst fileName = r.spec_path.split('/').pop();\n\nif (!fileName.endsWith('.md')) {\n  throw new Error('Expected Markdown file');\n}\n\n// Decode GitHub Base64 content\nconst fileBuffer = Buffer.from(base64, 'base64');\n\n// Calculate source MD5\nconst crypto = require('crypto');\nconst githubSourceMd5 = crypto\n  .createHash('md5')\n  .update(fileBuffer)\n  .digest('hex');\n\n// Prepare n8n binary file\nconst binaryData = await this.helpers.prepareBinaryData(\n  fileBuffer,\n  fileName,\n  'text/markdown'\n);\n\n// Remove large Base64 content from JSON\nconst {\n  github_content_base64,\n  ...metadata\n} = r;\n\nreturn {\n  json: {\n    ...metadata,\n    github_source_md5: githubSourceMd5,\n    retry_file_name: fileName,\n    retry_file_size: fileBuffer.length,\n    retry_file_ready: true\n  },\n  binary: {\n    data: binaryData\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4576,
+        944
+      ],
+      "id": "b3b710cd-d385-4000-9a89-8ded2d95038f",
+      "name": "Prepare Retry File"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.kb_url + '/api/v1/documents/upload' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "version",
+              "value": "={{ $json.target_version }}"
+            },
+            {
+              "name": "mode",
+              "value": "md"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4800,
+        1120
+      ],
+      "id": "137828f6-2355-4184-ad3b-c742b33226d6",
+      "name": "Retry Upload to KB",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        },
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      },
+      "disabled": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "fda2ca8e-6609-4685-ac3b-acfcca039b7a",
+              "name": "doc_id",
+              "value": "={{ $json.doc_id ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "={{ 'Recovery retry skipped: ' + ($json.retry_reason ?? $json.source_validation_errors?.join('; ') ?? 'Validation failed') }}",
+              "type": "string"
+            },
+            {
+              "id": "94308b4d-6426-4807-a882-bd443cb9da6d",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4576,
+        1152
+      ],
+      "id": "85349ed0-3ba0-48cd-aa07-e61ac5c4b6a2",
+      "name": "Prepare Retry Rejected"
+    },
+    {
+      "parameters": {
+        "url": "={{\n  $('Prepare Retry File').item.json.kb_url +\n  '/api/v1/documents'\n}}\n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "={{ $('Prepare Retry File').item.json.target_version }}"
+            },
+            {
+              "name": "name_filter",
+              "value": "={{ $('Prepare Retry File').item.json.spec_name }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4960,
+        944
+      ],
+      "id": "1d451711-cbf5-4f82-8c4e-70ffb687832a",
+      "name": "Verify Retry Upload",
+      "credentials": {
+        "githubApi": {
+          "id": "ykeGv6yH3syxkSX2",
+          "name": "ht_GitHub account 4"
+        },
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $json;\nconst source = $('Prepare Retry File').item.json;\nconst upload = $('Retry Upload to KB').item.json;\n\nconst normalize = value =>\n  String(value ?? '').trim();\n\nconst normalizeMd5 = value =>\n  normalize(value).toLowerCase();\n\nconst documents = Array.isArray(response.body)\n  ? response.body\n  : [];\n\nconst uploadDocId = normalize(upload.body?.doc_id);\n\nconst matches = documents.filter(doc => {\n  const docId = normalize(\n    doc.doc_id ?? doc.id ?? doc.document_id\n  );\n\n  return uploadDocId !== '' && docId === uploadDocId;\n});\n\nconst verifiedDoc = matches.length === 1\n  ? matches[0]\n  : null;\n\nconst githubMd5 = normalizeMd5(source.github_source_md5);\nconst kbMd5 = normalizeMd5(verifiedDoc?.md5);\n\nconst md5Valid =\n  /^[a-f0-9]{32}$/.test(githubMd5) &&\n  /^[a-f0-9]{32}$/.test(kbMd5);\n\nconst md5Matches =\n  md5Valid && githubMd5 === kbMd5;\n\nconst httpOk = response.statusCode === 200;\n\nconst uploadOk =\n  upload.statusCode === 200 &&\n  upload.body?.status === 'indexed';\n\nlet status = 'PENDING_REVIEW';\nlet errorMessage = '';\n\nif (!httpOk) {\n  errorMessage = `Retry verification HTTP ${response.statusCode}`;\n} else if (!Array.isArray(response.body)) {\n  errorMessage = 'Unexpected verification response format';\n} else if (!uploadOk) {\n  errorMessage = 'Retry upload not confirmed as indexed';\n} else if (!uploadDocId) {\n  errorMessage = 'Retry upload returned no doc_id';\n} else if (matches.length !== 1) {\n  errorMessage = `Expected one matching KB document; found ${matches.length}`;\n} else if (!md5Valid) {\n  errorMessage = 'Missing or invalid GitHub/KB MD5';\n} else if (!md5Matches) {\n  errorMessage = `MD5 mismatch: GitHub=${githubMd5}, KB=${kbMd5}`;\n} else {\n  status = 'SUCCESS';\n  errorMessage = '';\n}\n\nreturn {\n  json: {\n    pipeline_id: source.pipeline_id,\n    commit_id: source.commit_id,\n    spec_path: source.spec_path,\n    spec_name: source.spec_name,\n    document_type: source.document_type,\n    kb_url: source.kb_url,\n    target_version: source.target_version,\n\n    doc_id: uploadDocId || null,\n    status,\n    error_message: errorMessage,\n    processed_at: new Date().toISOString(),\n\n    retry_upload_status: upload.body?.status ?? '',\n    retry_job_id: upload.body?.job_id ?? '',\n\n    github_source_md5: githubMd5,\n    kb_document_md5: kbMd5,\n    retry_md5_matches: md5Matches,\n\n    retry_verified:\n      httpOk &&\n      uploadOk &&\n      matches.length === 1 &&\n      md5Matches,\n\n    retry_verification_count: matches.length\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5168,
+        944
+      ],
+      "id": "afeab20c-1c42-45e3-81d7-b5b6cade9359",
+      "name": "Evaluate Retry Result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "Retry upload response timed out; KB indexing outcome requires verification",
+              "type": "string"
+            },
+            {
+              "id": "94308b4d-6426-4807-a882-bd443cb9da6d",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5024,
+        1232
+      ],
+      "id": "07189627-0475-41cd-8947-cd07d130e30f",
+      "name": "Prepare Upload Timeout"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "872b6fdf-862d-4e8b-baa6-ccf4fa56622c",
+              "name": "status",
+              "value": "PENDING_REVIEW",
+              "type": "string"
+            },
+            {
+              "id": "fda2ca8e-6609-4685-ac3b-acfcca039b7a",
+              "name": "doc_id",
+              "value": "={{ $json.recovered_doc_id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e9e11e41-536b-4522-9112-c21938314472",
+              "name": "error_message",
+              "value": "={{ 'Unexpected recovery decision: ' + ($json.recovery_decision ?? 'undefined') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3568,
+        768
+      ],
+      "id": "77c787f0-c940-4faf-94c1-fcdc2c325aa7",
+      "name": "Prepare Unexpected Decision"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get Recovery Audit Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recovery Audit Records": {
+      "main": [
+        [
+          {
+            "node": "Select Recovery Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Recovery Candidates": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Check KB Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check KB Documents": {
+      "main": [
+        [
+          {
+            "node": "Verify KB Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify KB Document": {
+      "main": [
+        [
+          {
+            "node": "Found in KB?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Active Jobs": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Recovery Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Found in KB?": {
+      "main": [
+        [
+          {
+            "node": "Get Source File from GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Active Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Source File from GitHub": {
+      "main": [
+        [
+          {
+            "node": "Compare Source MD5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Source MD5": {
+      "main": [
+        [
+          {
+            "node": "Already Indexed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Indexed?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Recovered Audit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Content Mismatch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Recovered Audit": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Content Mismatch": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Recovered Audit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Recovery Jobs": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Prepare Waiting Audit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recheck KB Document",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluate Safe Retry Eligibility",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Check Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Manual Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Unexpected Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Waiting Audit": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recheck KB Document": {
+      "main": [
+        [
+          {
+            "node": "Verify Rechecked Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Rechecked Document": {
+      "main": [
+        [
+          {
+            "node": "Document Verified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Source File from GitHub1": {
+      "main": [
+        [
+          {
+            "node": "Compare Source MD5 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Verified?": {
+      "main": [
+        [
+          {
+            "node": "Get Source File from GitHub1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Verification Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Job Not Found": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Check Failed": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Manual Review": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Source MD5 1": {
+      "main": [
+        [
+          {
+            "node": "Already Indexed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Verification Failed": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Recovery Audit": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Save Recovery Audit?": {
+      "main": [
+        [
+          {
+            "node": "Save New Audit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save New Audit?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Final Audit Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Final Audit Row": {
+      "main": [
+        [
+          {
+            "node": "Save Recovered Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Recovery Audit": {
+      "main": [
+        [
+          {
+            "node": "Should Save Recovery Audit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        []
+      ]
+    },
+    "Evaluate Safe Retry Eligibility": {
+      "main": [
+        [
+          {
+            "node": "Safe Retry Eligible?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safe Retry Eligible?": {
+      "main": [
+        [
+          {
+            "node": "Get Retry Source from GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Job Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Retry Source from GitHub": {
+      "main": [
+        [
+          {
+            "node": "Validate Retry Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Retry Source": {
+      "main": [
+        [
+          {
+            "node": "Source Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Source Valid?": {
+      "main": [
+        [
+          {
+            "node": "Final KB Recheck",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Retry Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final KB Recheck": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Final KB Recheck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Final KB Recheck": {
+      "main": [
+        [
+          {
+            "node": "Safe Retry Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safe to Retry?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Retry File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Retry Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safe Retry Decision": {
+      "main": [
+        [
+          {
+            "node": "Safe to Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Retry File": {
+      "main": [
+        [
+          {
+            "node": "Retry Upload to KB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Upload to KB": {
+      "main": [
+        [
+          {
+            "node": "Verify Retry Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Upload Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Retry Rejected": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Retry Upload": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Retry Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Retry Result": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Upload Timeout": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Unexpected Decision": {
+      "main": [
+        [
+          {
+            "node": "Normalize Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "d500dcde-a31a-4770-bb3f-55b9dcac6ee3",
+  "meta": {
+    "instanceId": "9f6a250b5e41057ebc46f16e9a43e0df40b68d425919a02fddb29ca567a38e97"
+  },
+  "id": "11LuyEOBYvmVSmFH",
+  "tags": []
+}
