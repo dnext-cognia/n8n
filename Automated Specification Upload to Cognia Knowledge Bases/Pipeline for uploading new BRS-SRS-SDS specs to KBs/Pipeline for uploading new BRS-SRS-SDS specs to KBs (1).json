@@ -422,7 +422,7 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst compare = $input.first().json;\nconst files = compare.files ?? [];\n\nconst relevantFiles = files\n  .filter(file => {\n    const path = file.filename ?? '';\n    const lowerPath = path.toLowerCase();\n\n    // Yalnızca Markdown dosyaları\n    if (!lowerPath.endsWith('.md')) return false;\n\n    // Silinen dosyaları işleme alma\n    if (file.status === 'removed') return false;\n\n    // BRS kök dizinde, SRS/SDS servis dizinlerinde\n    const isSpec =\n      path.startsWith('BRS/') ||\n      path.includes('/BRS/') ||\n      path.includes('/SRS/') ||\n      path.includes('/SDS/');\n\n    if (!isSpec) return false;\n\n    // Yardımcı dosyaları hariç tut\n    const excluded =\n      lowerPath.includes('/input/') ||\n      lowerPath.includes('handover') ||\n      lowerPath.includes('qareport') ||\n      lowerPath.includes('approval-record');\n\n    return !excluded;\n  })\n  .map(file => {\n    const path = file.filename;\n\n    let documentType = null;\n\n    if (path.startsWith('BRS/') || path.includes('/BRS/')) {\n      documentType = 'BRS';\n    } else if (path.includes('/SRS/')) {\n      documentType = 'SRS';\n    } else if (path.includes('/SDS/')) {\n      documentType = 'SDS';\n    }\n\n    return {\n      filename: path,\n      status: file.status,\n      sha: file.sha,\n      documentType,\n      additions: file.additions ?? 0,\n      deletions: file.deletions ?? 0,\n      changes: file.changes ?? 0\n    };\n  });\n\nreturn [{\n  json: {\n    baseCommit: compare.base_commit?.sha ?? null,\n    currentCommit:\n      $('Normalize Commit Info').first().json.currentCommitSha,\n    relevantChangeCount: relevantFiles.length,\n    hasRelevantChanges: relevantFiles.length > 0,\n    relevantFiles\n  }\n}];\n"
+        "jsCode": "\nconst compare = $input.first().json;\nconst files = compare.files ?? [];\n\nconst relevantFiles = files\n  .filter(file => {\n    const path = file.filename ?? '';\n    const lowerPath = path.toLowerCase();\n\n    // Only Markdown files\n    if (!lowerPath.endsWith('.md')) return false;\n\n    // Exclude deleted files\n    if (file.status === 'removed') return false;\n\n    // Detect supported spec directories\n    const isSpec =\n      lowerPath.startsWith('brs/') ||\n      lowerPath.includes('/brs/') ||\n      lowerPath.includes('/srs/') ||\n      lowerPath.includes('/sds/');\n\n    if (!isSpec) return false;\n\n    const fileName = lowerPath.split('/').pop();\n\n    // Exclude reference documents\n    const isReference =\n      lowerPath.includes('/reference/') ||\n      /^ref[-_]?(brs|srs|sds)(?:[-_.]|$)/i.test(fileName);\n\n    if (isReference) return false;\n\n    // Exclude auxiliary files\n    const excluded =\n      lowerPath.includes('/input/') ||\n      lowerPath.includes('handover') ||\n      lowerPath.includes('qareport') ||\n      lowerPath.includes('approval-record');\n\n    return !excluded;\n  })\n  .map(file => {\n    const path = file.filename;\n    const lowerPath = path.toLowerCase();\n\n    let documentType = null;\n\n    if (\n      lowerPath.startsWith('brs/') ||\n      lowerPath.includes('/brs/')\n    ) {\n      documentType = 'BRS';\n    } else if (lowerPath.includes('/srs/')) {\n      documentType = 'SRS';\n    } else if (lowerPath.includes('/sds/')) {\n      documentType = 'SDS';\n    }\n\n    return {\n      filename: path,\n      status: file.status,\n      sha: file.sha,\n      documentType,\n      additions: file.additions ?? 0,\n      deletions: file.deletions ?? 0,\n      changes: file.changes ?? 0\n    };\n  });\n\nreturn [{\n  json: {\n    baseCommit: compare.base_commit?.sha ?? null,\n    currentCommit:\n      $('Normalize Commit Info').first().json.currentCommitSha,\n    relevantChangeCount: relevantFiles.length,\n    hasRelevantChanges: relevantFiles.length > 0,\n    relevantFiles\n  }\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -601,97 +601,6 @@
     },
     {
       "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.documentType }}",
-                    "rightValue": "BRS",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "38336171-4514-49b7-aa51-5507110d4ea2"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "BRS KB"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "id": "bde9490e-9ea3-47c5-831f-c113fad60cea",
-                    "leftValue": "={{ $json.documentType }}",
-                    "rightValue": "SRS",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals",
-                      "name": "filter.operator.equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "SRS KB"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "id": "f1379f4e-83ee-427f-8438-f59b949f48d9",
-                    "leftValue": "={{ $json.documentType }}",
-                    "rightValue": "SDS",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals",
-                      "name": "filter.operator.equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "SDS KB"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.4,
-      "position": [
-        2928,
-        -400
-      ],
-      "id": "2cbd409f-9833-4219-a659-1be54313cac9",
-      "name": "Switch"
-    },
-    {
-      "parameters": {
         "operation": "toText",
         "sourceProperty": "content",
         "binaryPropertyName": "=data",
@@ -710,12 +619,12 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst results = $input.all();\nconst config = $('Pipeline Config').first().json;\n\nfunction getErrorMessage(response) {\n  const error = response.error ?? response.message;\n\n  if (typeof error === 'string') return error;\n  if (error && typeof error === 'object') {\n    return error.message || JSON.stringify(error);\n  }\n\n  return 'Upload not confirmed';\n}\n\nreturn results.map((item, index) => {\n  // n8n item-linking üzerinden kaynak metadata'yı bul.\n  // Loop içindeki item indeksine güvenerek tüm kaynak listesini tarama.\n  let source;\n\n  try {\n    source = $('Resolve KB Target').itemMatching(index).json;\n  } catch (error) {\n    throw new Error(\n      `Cannot match upload result to source metadata: ${error.message}`\n    );\n  }\n\n  const response = item.json;\n\n  const requiredFields = [\n    'commitId',\n    'sourcePath',\n    'specName',\n    'documentType',\n    'kbUrl'\n  ];\n\n  const missing = requiredFields.filter(field => !source[field]);\n\n  if (missing.length) {\n    throw new Error(\n      `Missing metadata: ${missing.join(', ')}`\n    );\n  }\n\n  const success =\n    response.status === 'indexed' &&\n    Boolean(response.doc_id);\n\n  return {\n    json: {\n      pipeline_id: config.repoName,\n      commit_id: source.commitId,\n      spec_path: source.sourcePath,\n      spec_name: source.specName,\n      document_type: source.documentType,\n      kb_url: source.kbUrl,\n      target_version:\n        response.version || source.targetVersion || 'v2.14',\n      doc_id: response.doc_id || '',\n      status: success ? 'SUCCESS' : 'FAILED',\n      error_message: success ? '' : getErrorMessage(response),\n      processed_at: new Date().toISOString()\n    },\n    pairedItem: { item: index }\n  };\n});\n"
+        "jsCode": "\nconst results = $input.all();\nconst config = $('Pipeline Config').first().json;\n\nfunction getErrorMessage(response) {\n  const error = response.error ?? response.message;\n\n  if (typeof error === 'string') {\n    return error;\n  }\n\n  if (error && typeof error === 'object') {\n    return error.message || JSON.stringify(error);\n  }\n\n  return 'Upload not confirmed';\n}\n\nfunction isTimeout(response, errorMessage) {\n  const errorCode = String(\n    response.error?.code ??\n    response.code ??\n    ''\n  ).toUpperCase();\n\n  const message = errorMessage.toLowerCase();\n\n  return (\n    ['ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT']\n      .includes(errorCode) ||\n    message.includes('timeout') ||\n    message.includes('timed out') ||\n    message.includes('etimedout') ||\n    message.includes('econnaborted')\n  );\n}\n\nreturn results.map((item, index) => {\n  let source;\n\n  try {\n    source = $('Resolve KB Target').itemMatching(index).json;\n  } catch (error) {\n    throw new Error(\n      `Cannot match upload result to source metadata: ${error.message}`\n    );\n  }\n\n  const response = item.json;\n\n  const requiredFields = [\n    'commitId',\n    'sourcePath',\n    'specName',\n    'documentType',\n    'kbUrl'\n  ];\n\n  const missing = requiredFields.filter(\n    field => !source[field]\n  );\n\n  if (missing.length) {\n    throw new Error(\n      `Missing metadata: ${missing.join(', ')}`\n    );\n  }\n\n  const success =\n    response.status === 'indexed' &&\n    Boolean(response.doc_id);\n\n  const errorMessage = success\n    ? ''\n    : getErrorMessage(response);\n\n  let status;\n\n  if (success) {\n    status = 'SUCCESS';\n  } else if (isTimeout(response, errorMessage)) {\n    status = 'TIMEOUT';\n  } else {\n    status = 'FAILED';\n  }\n\n  return {\n    json: {\n      pipeline_id: config.repoName,\n      commit_id: source.commitId,\n      spec_path: source.sourcePath,\n      spec_name: source.specName,\n      document_type: source.documentType,\n      kb_url: source.kbUrl,\n      target_version:\n        response.version ||\n        source.targetVersion ||\n        'v2.14',\n      doc_id: response.doc_id || '',\n      status,\n      error_message: errorMessage,\n      processed_at: new Date().toISOString()\n    },\n    pairedItem: { item: index }\n  };\n});\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4384,
+        4880,
         80
       ],
       "id": "79c3707d-9d31-446c-93fe-b5c30c1334f1",
@@ -728,8 +637,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4016,
-        -80
+        4432,
+        -64
       ],
       "id": "7f5c6e86-4a1b-43e3-a638-5f38334f22ed",
       "name": "Check Upload Results"
@@ -762,7 +671,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        4240,
+        4656,
         -288
       ],
       "id": "c399ca8c-859b-4064-bab6-7321a62bdf0f",
@@ -833,7 +742,118 @@
           "mappingMode": "autoMapInputData",
           "value": {},
           "matchingColumns": [],
-          "schema": [],
+          "schema": [
+            {
+              "id": "pipeline_id",
+              "displayName": "pipeline_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "commit_id",
+              "displayName": "commit_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "spec_path",
+              "displayName": "spec_path",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "spec_name",
+              "displayName": "spec_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "document_type",
+              "displayName": "document_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "kb_url",
+              "displayName": "kb_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "target_version",
+              "displayName": "target_version",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "doc_id",
+              "displayName": "doc_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
         },
@@ -842,7 +862,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        4576,
+        5072,
         80
       ],
       "id": "04df0ae7-b359-4893-8e00-f4c106fef0c1",
@@ -860,7 +880,7 @@
         "filters": {
           "conditions": [
             {
-              "keyName": "=id",
+              "keyName": "=pipeline_id",
               "condition": "=eq",
               "keyValue": "={{ $json.pipeline_id }}"
             }
@@ -870,7 +890,38 @@
           "mappingMode": "autoMapInputData",
           "value": {},
           "matchingColumns": [],
-          "schema": [],
+          "schema": [
+            {
+              "id": "pipeline_id",
+              "displayName": "pipeline_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_processed_commit",
+              "displayName": "last_processed_commit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
         },
@@ -881,23 +932,11 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        4912,
+        5328,
         -64
       ],
       "id": "896ecfa0-c0e6-460d-be9b-b1568062a898",
       "name": "Update Tracker"
-    },
-    {
-      "parameters": {},
-      "type": "n8n-nodes-base.limit",
-      "typeVersion": 1,
-      "position": [
-        3088,
-        -688
-      ],
-      "id": "119d8f7f-1b59-4bd7-9911-fc24adc049d5",
-      "name": "Limit",
-      "disabled": true
     },
     {
       "parameters": {
@@ -919,7 +958,7 @@
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
-        4640,
+        5056,
         -432
       ],
       "id": "4fbe1a9f-6616-4d11-91ad-8aef3ad49c5b",
@@ -957,7 +996,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        4112,
+        4672,
         80
       ],
       "id": "2abaf7ae-2cb4-4f06-a570-33c60d089231",
@@ -1007,7 +1046,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        4560,
+        4768,
         -80
       ],
       "id": "f5995a94-cb0d-4b40-9c9f-3f40d766a8a3",
@@ -1165,8 +1204,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3488,
-        80
+        3520,
+        64
       ],
       "id": "fb70a889-cb99-4665-b2bb-68ed909b8e8d",
       "name": "Edit Fields1"
@@ -1178,7 +1217,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        3328,
+        3360,
         -32
       ],
       "id": "866d31a2-d4b4-4f2b-b184-b386645d010a",
@@ -1214,11 +1253,6 @@
               "keyName": "=target_version",
               "condition": "=eq",
               "keyValue": "v2.14"
-            },
-            {
-              "keyName": "=status",
-              "condition": "=eq",
-              "keyValue": "SUCCESS"
             }
           ]
         },
@@ -1227,8 +1261,8 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        3648,
-        80
+        3712,
+        64
       ],
       "id": "183cb58d-3eca-43a7-b528-9dc0e87e4e31",
       "name": "Check Existing Upload",
@@ -1246,7 +1280,7 @@
           "conditions": [
             {
               "id": "e4470c5c-546f-44e7-878d-8362a427f088",
-              "leftValue": "={{ Boolean($json.doc_id && $json.status === 'SUCCESS') }}",
+              "leftValue": "={{ $json.decision === 'SKIP' }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -1262,8 +1296,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        3712,
-        368
+        4096,
+        64
       ],
       "id": "05591af7-9a20-4756-a5f8-fbd9d07d8fdc",
       "name": "Already Uploaded?"
@@ -1275,7 +1309,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3920,
+        4480,
         80
       ],
       "id": "aafadf63-a16f-47ec-9bad-628129a1dc00",
@@ -1285,12 +1319,6 @@
       "parameters": {
         "assignments": {
           "assignments": [
-            {
-              "id": "f188d9d2-a7f2-43d0-bbed-d03963f8ad0d",
-              "name": "spec_path",
-              "value": "={{ $json.spec_path }}",
-              "type": "string"
-            },
             {
               "id": "40516602-e4e2-4f24-b24d-fcbb2303693a",
               "name": "status",
@@ -1302,6 +1330,66 @@
               "name": "doc_id",
               "value": "={{ $json.doc_id }}",
               "type": "string"
+            },
+            {
+              "id": "24617cca-45e8-46db-b817-15407b0911c4",
+              "name": "pipeline_id",
+              "value": "={{ $('Pipeline Config').first().json.repoName }}",
+              "type": "string"
+            },
+            {
+              "id": "8312a1a4-863b-4e23-95d1-09b51bdec615",
+              "name": "commit_id",
+              "value": "={{ $('Resolve KB Target').itemMatching(0).json.commitId }}",
+              "type": "string"
+            },
+            {
+              "id": "7dbced77-42e8-46e8-89f7-3bc5ff3c3ef8",
+              "name": "spec_path",
+              "value": "={{ $('Resolve KB Target').itemMatching(0).json.sourcePath }}",
+              "type": "string"
+            },
+            {
+              "id": "ed989224-43e5-4568-878b-cdf53dda667a",
+              "name": "spec_name",
+              "value": "={{ $('Resolve KB Target').itemMatching(0).json.specName }}",
+              "type": "string"
+            },
+            {
+              "id": "707ab86c-613d-4856-9a05-04876d319d39",
+              "name": "document_type",
+              "value": "={{ $('Resolve KB Target').itemMatching(0).json.documentType }}",
+              "type": "string"
+            },
+            {
+              "id": "d70b2daa-dd9a-4b98-b813-218e2784954f",
+              "name": "kb_url",
+              "value": "={{ $('Resolve KB Target').itemMatching(0).json.kbUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "3597b424-beee-47c8-8cf8-5e28374d9719",
+              "name": "target_version",
+              "value": "={{ $('Resolve KB Target').itemMatching(0).json.targetVersion || 'v2.14' }}",
+              "type": "string"
+            },
+            {
+              "id": "8e7f1dd9-fe70-423e-b88b-9195601bf204",
+              "name": "doc_id",
+              "value": "={{ $json.doc_id }}",
+              "type": "string"
+            },
+            {
+              "id": "00b9a0a3-66a3-4771-ba88-4b88a7a6084b",
+              "name": "status",
+              "value": "SKIPPED",
+              "type": "string"
+            },
+            {
+              "id": "bdab36fb-1519-4fd5-9fc7-a8bf0291584c",
+              "name": "processed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
             }
           ]
         },
@@ -1310,26 +1398,183 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        4016,
-        352
+        4208,
+        -256
       ],
       "id": "4fdd4f01-6b1b-47e9-8cb9-8425dcf041c2",
       "name": "Mark as Skipped"
     },
     {
       "parameters": {
-        "amount": 1,
-        "unit": "minutes"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2ed19e3c-2bb0-49db-9d32-93a1e855e072",
+              "leftValue": "={{ $json.decision === 'PENDING_REVIEW' }}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
       },
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
       "position": [
-        4736,
+        4304,
         80
       ],
-      "id": "473b7459-9efd-485c-a205-ba8118fb59cb",
-      "name": "Wait",
-      "webhookId": "3e1cabda-d47a-4427-9316-6561db30e460"
+      "id": "3f7f3516-235a-49c7-959c-f91049aae09f",
+      "name": "Previous Timeout?"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst rows = $input.all()\n  .map(item => item.json)\n  .filter(row => row && row.spec_path && row.status);\n\nconst success = rows.find(row =>\n  row.status === 'SUCCESS' &&\n  Boolean(row.doc_id)\n);\n\nconst pending = rows.find(row =>\n  ['TIMEOUT', 'PENDING_REVIEW'].includes(row.status)\n);\n\nlet decision = 'UPLOAD';\n\nif (success) {\n  decision = 'SKIP';\n} else if (pending) {\n  decision = 'PENDING_REVIEW';\n}\n\nreturn [{\n  json: {\n    decision,\n    status: success?.status || pending?.status || '',\n    doc_id: success?.doc_id || '',\n    previous_error: pending?.error_message || '',\n    previous_audit_id: success?.id || pending?.id || null\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3920,
+        64
+      ],
+      "id": "4ed3116f-3904-42ae-9983-28dd2ca09720",
+      "name": "Evaluate Upload History"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nconst config = $('Pipeline Config').first().json;\n\nreturn items.map((item, index) => {\n  const source = $('Resolve KB Target')\n    .itemMatching(index).json;\n\n  return {\n    json: {\n      pipeline_id: config.repoName,\n      commit_id: source.commitId,\n      spec_path: source.sourcePath,\n      spec_name: source.specName,\n      document_type: source.documentType,\n      kb_url: source.kbUrl,\n      target_version: source.targetVersion || 'v2.14',\n      doc_id: '',\n      status: 'PENDING_REVIEW',\n      error_message:\n        item.json.previous_error ||\n        'Previous upload timed out; backend status requires verification',\n      processed_at: new Date().toISOString()\n    },\n    pairedItem: { item: index }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4624,
+        432
+      ],
+      "id": "e7555fbd-745b-49be-89ff-4856f41c33ea",
+      "name": "Mark as Pending Review"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1538d0b3-8dbf-40f8-a20b-ff8ce22ea014",
+              "leftValue": "={{ ['FAILED', 'ERROR', 'PENDING_REVIEW'].includes(String($json.status ?? '').toUpperCase()) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        5248,
+        112
+      ],
+      "id": "6a3bd4f7-9f95-477e-8d29-b9a87034bb69",
+      "name": "Should Send Failure Email?"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        16,
+        208
+      ],
+      "id": "97b48bff-1147-4240-abbb-6aac8bfa6486",
+      "name": "Daily Pipeline Trigger"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "34cdaf76-423e-460e-92e0-4c33d6c30b91",
+              "name": "pipeline_id",
+              "value": "={{ $json.pipelineId }}",
+              "type": "string"
+            },
+            {
+              "id": "52d05abb-97b6-481b-bbb1-fc6991724e07",
+              "name": "last_processed_commit",
+              "value": "={{ $json.currentCommit }}",
+              "type": "string"
+            },
+            {
+              "id": "e0eecb5a-5ea8-43e2-8195-6706e084640f",
+              "name": "updated_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5040,
+        -240
+      ],
+      "id": "9b3cb13d-a0fa-4bed-9e9a-9b2cbd1b04ee",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n@dnext-technology.com",
+        "toEmail": "={{ 'hannan.toprak@dnext-technology.com, ibrahim.dogru@dnext-technology.com' }}\n",
+        "subject": "= {{ '[Cognia KB] Upload Failure - ' + ($json.spec_name || 'Unknown Document') }}",
+        "emailFormat": "text",
+        "text": "={{\n  'Cognia KB Pipeline - Upload Failure Notification\\n\\n' +\n  'An error occurred while processing a specification document.\\n\\n' +\n  'Pipeline: ' + ($json.pipeline_id || 'N/A') + '\\n' +\n  'Document: ' + ($json.spec_name || 'N/A') + '\\n' +\n  'Document Type: ' + ($json.document_type || 'N/A') + '\\n' +\n  'Status: ' + ($json.status || 'N/A') + '\\n' +\n  'Commit ID: ' + ($json.commit_id || 'N/A') + '\\n' +\n  'File Path: ' + ($json.spec_path || 'N/A') + '\\n' +\n  'Error Details: ' + ($json.error_message || 'N/A') + '\\n' +\n  'Timestamp: ' + ($json.processed_at || $now.toISO()) + '\\n\\n' +\n  'Please review the n8n execution logs and audit table.\\n\\n' +\n  'This is an automated notification from Cognia KB Pipeline.'\n}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        5504,
+        96
+      ],
+      "id": "7e499fc5-7a47-4249-8955-716aa45fcebf",
+      "name": "Send email",
+      "webhookId": "4003b970-803b-4a57-bcc3-7ac899c4dc22",
+      "credentials": {
+        "smtp": {
+          "id": "CNEwIMLz06iF3vj4",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -1488,12 +1733,6 @@
         ]
       ]
     },
-    "Switch": {
-      "main": [
-        [],
-        []
-      ]
-    },
     "Convert to File": {
       "main": [
         [
@@ -1541,7 +1780,7 @@
       "main": [
         [
           {
-            "node": "Wait",
+            "node": "Should Send Failure Email?",
             "type": "main",
             "index": 0
           }
@@ -1552,7 +1791,7 @@
       "main": [
         [
           {
-            "node": "Update Tracker",
+            "node": "Edit Fields2",
             "type": "main",
             "index": 0
           }
@@ -1564,11 +1803,6 @@
             "index": 0
           }
         ]
-      ]
-    },
-    "Limit": {
-      "main": [
-        []
       ]
     },
     "Resolve KB Target": {
@@ -1681,7 +1915,7 @@
       "main": [
         [
           {
-            "node": "Already Uploaded?",
+            "node": "Evaluate Upload History",
             "type": "main",
             "index": 0
           }
@@ -1699,7 +1933,7 @@
         ],
         [
           {
-            "node": "Restore Upload Item",
+            "node": "Previous Timeout?",
             "type": "main",
             "index": 0
           }
@@ -1728,7 +1962,87 @@
         ]
       ]
     },
-    "Wait": {
+    "Previous Timeout?": {
+      "main": [
+        [
+          {
+            "node": "Mark as Pending Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Restore Upload Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Upload History": {
+      "main": [
+        [
+          {
+            "node": "Already Uploaded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Pending Review": {
+      "main": [
+        [
+          {
+            "node": "Save Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send Failure Email?": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Pipeline Trigger": {
+      "main": [
+        [
+          {
+            "node": "Pipeline Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "Update Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email": {
       "main": [
         [
           {
@@ -1745,8 +2059,9 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "abe64e8d-c4c1-47c4-b953-41be0b4fd6cc",
+  "versionId": "bf8098f3-c3f6-4d61-b295-f2974f63c5c3",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "9f6a250b5e41057ebc46f16e9a43e0df40b68d425919a02fddb29ca567a38e97"
   },
   "id": "71yTcBrIKHYG4WPNLuNIn",
