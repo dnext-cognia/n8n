@@ -1,0 +1,3 @@
+Reference KB Recovery Workflow
+
+Recovers and verifies failed or timed-out Reference BRS, SRS, and SDS uploads (v2.13). Checks KB documents, active jobs, and GitHub source integrity before considering a safe retry. Records recovery results in spec_refkb_audit and flags uncertain cases for manual review to prevent duplicate uploads.
