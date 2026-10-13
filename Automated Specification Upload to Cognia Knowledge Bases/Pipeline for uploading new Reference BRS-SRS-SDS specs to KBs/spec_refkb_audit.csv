@@ -1,0 +1,2 @@
+﻿id,pipeline_id,commit_id,spec_path,spec_name,document_type,kb_url,target_version,doc_id,status,error_message,processed_at,createdAt,updatedAt
+6,dnext-product-docs-reference,1d1694f5f30c03f8ef0ea1685ff57fa4b26b5d1c,dnext-drcms-resource-catalog-mgmt-srvc/BRS/Reference/brs-dnext-drcms-resource-catalog-mgmt-srvc.md,brs-dnext-drcms-resource-catalog-mgmt-srvc,BRS,https://cognia-kb-refbrs.dnext-ai.link,v2.13,,TIMEOUT,timeout of 600000ms exceeded,2026-10-13T19:24:37.717Z,2026-10-13T19:24:37.743Z,2026-10-13T19:24:37.743Z
