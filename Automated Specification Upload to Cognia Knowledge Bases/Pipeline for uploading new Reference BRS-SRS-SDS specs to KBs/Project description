@@ -1,0 +1,19 @@
+**Reference BRS/SRS/SDS Knowledge Base Synchronization Pipeline**
+
+An n8n-based automation pipeline that synchronizes Reference BRS, SRS, and SDS specifications from the `main` branch of the `dnext-technology/dnext-product-docs` GitHub repository to their respective Cognia Reference Knowledge Bases, targeting version `v2.13`.
+
+**Key Capabilities:**
+- **Initial & Incremental Synchronization:** Performs initial repository scanning and detects subsequent changes using GitHub commit comparison.
+- **Document Identification:** Automatically identifies Reference BRS, SRS, and SDS master specifications while excluding section-level files and irrelevant documents.
+- **Content Validation:** Validates Markdown content and prevents empty documents from being uploaded.
+- **Automated KB Upload:** Routes documents to the appropriate Reference KB endpoint and uploads them using authenticated API requests.
+- **Duplicate Prevention:** Checks previous audit records to determine whether documents should be uploaded, skipped, or held for manual review.
+- **Audit Logging:** Maintains a dedicated `spec_refkb_audit` table containing document metadata, commit information, upload status, errors, and processing timestamps.
+- **Commit Tracking:** Uses a dedicated `spec_refkb_tracker` table and advances the processed commit only after successful validation of the synchronization results.
+- **Error Handling & Notifications:** Records failed uploads and pending reviews, with email notifications for workflow failures.
+- **Execution:** Supports manual or event-triggered execution without scheduled runs.
+
+**Target Knowledge Bases:**
+- Reference BRS: `cognia-kb-refbrs.dnext-ai.link`
+- Reference SRS: `cognia-kb-refsrs.dnext-ai.link`
+- Reference SDS: `cognia-kb-refsds.dnext-ai.link`
