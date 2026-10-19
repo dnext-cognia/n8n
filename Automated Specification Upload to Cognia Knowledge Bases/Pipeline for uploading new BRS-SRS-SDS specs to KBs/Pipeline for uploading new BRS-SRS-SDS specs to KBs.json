@@ -59,7 +59,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        416,
+        320,
         0
       ],
       "id": "ada704ef-62b4-4302-8123-e3b6923baddf",
@@ -88,7 +88,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        624,
+        560,
         0
       ],
       "id": "91540b71-b9ec-40c0-a0a7-c1bbcf4c893d",
@@ -316,8 +316,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        960,
-        192
+        976,
+        176
       ],
       "id": "a73e3575-5911-4ddb-9686-104b73c17b19",
       "name": "Extract Previous Commit"
@@ -360,7 +360,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        1488,
+        1520,
         -16
       ],
       "id": "14619d75-eabf-4cc8-8df9-4894c76ff7b8",
@@ -551,6 +551,18 @@
               "type": "string"
             },
             {
+              "id": "1c80be1e-0199-4f80-a050-687e134dc66c",
+              "name": "fileSha",
+              "value": "={{ $('Identify Master Spec').item.json.sha }}",
+              "type": "string"
+            },
+            {
+              "id": "620bd586-dd0e-4689-972b-5dcf6fd3792a",
+              "name": "commitId",
+              "value": "={{ $('Identify Master Spec').item.json.currentCommit }}",
+              "type": "string"
+            },
+            {
               "id": "5a3dab6a-63ce-49a1-a367-04d3aa3d07bc",
               "name": "specName",
               "value": "={{ $('Identify Master Spec').item.json.specName }}",
@@ -566,12 +578,6 @@
               "id": "3c2c32e9-8f9c-46f0-b009-d3cb11f17b76",
               "name": "sourcePath",
               "value": "={{ $('Identify Master Spec').item.json.filename }}",
-              "type": "string"
-            },
-            {
-              "id": "620bd586-dd0e-4689-972b-5dcf6fd3792a",
-              "name": "commitId",
-              "value": "={{ $('Identify Master Spec').item.json.currentCommit }}",
               "type": "string"
             },
             {
@@ -624,21 +630,21 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4880,
-        80
+        5440,
+        1200
       ],
       "id": "79c3707d-9d31-446c-93fe-b5c30c1334f1",
       "name": "Prepare Audit Record"
     },
     {
       "parameters": {
-        "jsCode": "\nconst expectedItems = $('Prepare KB Payload').all();\nconst results = $input.all();\n\nconst config = $('Pipeline Config').first().json;\nconst commitInfo = $('Normalize Commit Info').first().json;\n\n// 1. Expected documents\nconst expectedDocuments = expectedItems.map(item => ({\n  spec_path: item.json.sourcePath,\n  document_type: item.json.documentType,\n  commit_id: item.json.commitId\n}));\n\nconst expectedCount = expectedDocuments.length;\n\n// 2. Normalize processed results\nconst processedDocuments = results.map(item => ({\n  spec_path: item.json.spec_path || item.json.sourcePath,\n  document_type:\n    item.json.document_type || item.json.documentType,\n  commit_id:\n    item.json.commit_id || item.json.commitId,\n  status: String(item.json.status || '').toUpperCase(),\n  doc_id: item.json.doc_id || ''\n}));\n\nconst processedCount = processedDocuments.length;\n\n// 3. Count statuses\nconst uploadedCount = processedDocuments.filter(\n  item => item.status === 'SUCCESS'\n).length;\n\nconst skippedCount = processedDocuments.filter(\n  item => item.status === 'SKIPPED'\n).length;\n\nconst failedCount = processedDocuments.filter(\n  item => !['SUCCESS', 'SKIPPED'].includes(item.status)\n).length;\n\nconst timeoutCount = processedDocuments.filter(\n  item => item.status === 'TIMEOUT'\n).length;\n\n// 4. Build document identity keys\nconst makeKey = item =>\n  JSON.stringify([\n    item.spec_path,\n    item.document_type\n  ]);\n\nconst expectedKeys = expectedDocuments.map(makeKey);\nconst processedKeys = processedDocuments.map(makeKey);\n\nconst expectedSet = new Set(expectedKeys);\nconst processedSet = new Set(processedKeys);\n\n// 5. Find missing documents\nconst missingDocuments = expectedDocuments.filter(\n  item => !processedSet.has(makeKey(item))\n);\n\n// 6. Find unexpected documents\nconst unexpectedDocuments = processedDocuments.filter(\n  item => !expectedSet.has(makeKey(item))\n);\n\n// 7. Find duplicate results\nconst seen = new Set();\n\nconst duplicateDocuments = processedDocuments.filter(item => {\n  const key = makeKey(item);\n\n  if (seen.has(key)) {\n    return true;\n  }\n\n  seen.add(key);\n  return false;\n});\n\n// 8. Check missing metadata\nconst invalidDocuments = processedDocuments.filter(\n  item =>\n    !item.spec_path ||\n    !item.document_type ||\n    !item.commit_id\n);\n\n// 9. Check commit consistency\nconst commitMismatches = processedDocuments.filter(\n  item => {\n    const expected = expectedDocuments.find(\n      doc => makeKey(doc) === makeKey(item)\n    );\n\n    return (\n      expected &&\n      item.commit_id !== expected.commit_id\n    );\n  }\n);\n\n// 10. Check document IDs for new uploads\nconst missingDocIds = processedDocuments.filter(\n  item =>\n    item.status === 'SUCCESS' &&\n    !item.doc_id\n);\n\n// 11. Final validation\nconst allSuccessful =\n  expectedCount > 0 &&\n  processedCount === expectedCount &&\n  uploadedCount + skippedCount === expectedCount &&\n  failedCount === 0 &&\n  expectedSet.size === expectedCount &&\n  processedSet.size === expectedCount &&\n  missingDocuments.length === 0 &&\n  unexpectedDocuments.length === 0 &&\n  duplicateDocuments.length === 0 &&\n  invalidDocuments.length === 0 &&\n  commitMismatches.length === 0 &&\n  missingDocIds.length === 0;\n\n// 12. Return summary\nreturn [{\n  json: {\n    pipelineId: config.repoName,\n    currentCommit: commitInfo.currentCommitSha,\n\n    expectedCount,\n    processedCount,\n\n    uploadedCount,\n    skippedCount,\n    failedCount,\n    timeoutCount,\n\n    missingDocuments,\n    unexpectedDocuments,\n    duplicateDocuments,\n    invalidDocuments,\n    commitMismatches,\n    missingDocIds,\n\n    allSuccessful,\n\n    checkedAt: new Date().toISOString()\n  }\n}];\n"
+        "jsCode": "const expectedItems = $('Prepare KB Payload').all();\nconst results = $input.all();\n\nconst config = $('Pipeline Config').first().json;\nconst commitInfo = $('Normalize Commit Info').first().json;\n\nconst currentCommit = commitInfo.currentCommitSha;\n\n// Expected documents\nconst expectedDocuments = expectedItems.map(item => ({\n  spec_path: item.json.sourcePath,\n  document_type: item.json.documentType,\n  commit_id: item.json.commitId\n}));\n\n// Processed documents\nconst processedDocuments = results.map(item => ({\n  spec_path:\n    item.json.spec_path || item.json.sourcePath,\n\n  document_type:\n    item.json.document_type || item.json.documentType,\n\n  commit_id:\n    item.json.commit_id || item.json.commitId,\n\n  status:\n    String(item.json.status || '').toUpperCase(),\n\n  doc_id:\n    item.json.doc_id || '',\n\n  operation:\n    item.json.operation || '',\n\n  error_message:\n    item.json.error_message || ''\n}));\n\nconst expectedCount = expectedDocuments.length;\nconst processedCount = processedDocuments.length;\n\n// Status counts\nconst uploadedCount = processedDocuments.filter(\n  item => item.status === 'SUCCESS'\n).length;\n\nconst skippedCount = processedDocuments.filter(\n  item => item.status === 'SKIPPED'\n).length;\n\nconst recoveredCount = processedDocuments.filter(\n  item => item.status === 'RECOVERED'\n).length;\n\nconst pendingReviewCount = processedDocuments.filter(\n  item => item.status === 'PENDING_REVIEW'\n).length;\nconst pendingReviewDocuments = processedDocuments\n  .filter(item => item.status === 'PENDING_REVIEW')\n  .map(item => ({\n    spec_path: item.spec_path,\n    document_type: item.document_type,\n    operation: item.operation,\n    doc_id: item.doc_id,\n    reason: item.error_message\n  }));\nconst failedCount = processedDocuments.filter(\n  item => ![\n    'SUCCESS',\n    'SKIPPED',\n    'RECOVERED'\n  ].includes(item.status)\n).length;\n\n// Identity\nconst makeKey = item =>\n  JSON.stringify([\n    item.spec_path,\n    item.document_type\n  ]);\n\nconst expectedKeys = expectedDocuments.map(makeKey);\nconst processedKeys = processedDocuments.map(makeKey);\n\nconst expectedSet = new Set(expectedKeys);\nconst processedSet = new Set(processedKeys);\n\n// Missing\nconst missingDocuments = expectedDocuments.filter(\n  item => !processedSet.has(makeKey(item))\n);\n\n// Unexpected\nconst unexpectedDocuments = processedDocuments.filter(\n  item => !expectedSet.has(makeKey(item))\n);\n\n// Duplicates\nconst seen = new Set();\n\nconst duplicateDocuments = processedDocuments.filter(item => {\n  const key = makeKey(item);\n\n  if (seen.has(key)) return true;\n\n  seen.add(key);\n  return false;\n});\n\n// Invalid metadata\nconst invalidDocuments = processedDocuments.filter(\n  item =>\n    !item.spec_path ||\n    !item.document_type ||\n    !item.commit_id\n);\n\n// Commit mismatches\nconst commitMismatches = processedDocuments.filter(item => {\n  const expected = expectedDocuments.find(\n    doc => makeKey(doc) === makeKey(item)\n  );\n\n  return expected &&\n    item.commit_id !== expected.commit_id;\n});\n\n// Missing document IDs\nconst missingDocIds = processedDocuments.filter(\n  item =>\n    ['SUCCESS', 'RECOVERED'].includes(item.status) &&\n    !item.doc_id\n);\n\n// Successful statuses\nconst successfulCount =\n  uploadedCount +\n  skippedCount +\n  recoveredCount;\n\n// Final validation\nconst allSuccessful =\n  expectedCount > 0 &&\n  processedCount === expectedCount &&\n  successfulCount === expectedCount &&\n  failedCount === 0 &&\n  pendingReviewCount === 0 &&\n  expectedSet.size === expectedCount &&\n  processedSet.size === expectedCount &&\n  missingDocuments.length === 0 &&\n  unexpectedDocuments.length === 0 &&\n  duplicateDocuments.length === 0 &&\n  invalidDocuments.length === 0 &&\n  commitMismatches.length === 0 &&\n  missingDocIds.length === 0 &&\n  expectedDocuments.every(\n    item => item.commit_id === currentCommit\n  );\n\nreturn [{\n  json: {\n    pipeline_id: config.repoName,\n    currentCommit,\n\n    expectedCount,\n    processedCount,\n\n    uploadedCount,\n    skippedCount,\n    recoveredCount,\n    pendingReviewCount,\n    failedCount,\n\n    missingDocuments,\n    unexpectedDocuments,\n    duplicateDocuments,\n    invalidDocuments,\n    commitMismatches,\n    missingDocIds,\n    pendingReviewDocuments,\n   \n\n    allSuccessful,\n\n    checkedAt: new Date().toISOString()\n  }\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4432,
-        -64
+        4160,
+        -144
       ],
       "id": "7f5c6e86-4a1b-43e3-a638-5f38334f22ed",
       "name": "Check Upload Results"
@@ -671,8 +677,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        4656,
-        -288
+        4416,
+        -384
       ],
       "id": "c399ca8c-859b-4064-bab6-7321a62bdf0f",
       "name": "If"
@@ -862,8 +868,8 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        5072,
-        80
+        5584,
+        1296
       ],
       "id": "04df0ae7-b359-4893-8e00-f4c106fef0c1",
       "name": "Save Audit Log"
@@ -932,8 +938,8 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        5328,
-        -64
+        4928,
+        -400
       ],
       "id": "896ecfa0-c0e6-460d-be9b-b1568062a898",
       "name": "Update Tracker"
@@ -958,8 +964,8 @@
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
-        5056,
-        -432
+        6416,
+        -16
       ],
       "id": "4fbe1a9f-6616-4d11-91ad-8aef3ad49c5b",
       "name": "Stop and Error"
@@ -996,8 +1002,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        4672,
-        80
+        5232,
+        1232
       ],
       "id": "2abaf7ae-2cb4-4f06-a570-33c60d089231",
       "name": "Upload Spec to KB",
@@ -1024,7 +1030,7 @@
             {
               "id": "34cdaf76-423e-460e-92e0-4c33d6c30b91",
               "name": "pipeline_id",
-              "value": "={{ $json.pipelineId }}",
+              "value": "={{ $json.pipeline_id }}",
               "type": "string"
             },
             {
@@ -1046,8 +1052,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        4768,
-        -80
+        5552,
+        -560
       ],
       "id": "f5995a94-cb0d-4b40-9c9f-3f40d766a8a3",
       "name": "Edit Fields"
@@ -1098,33 +1104,45 @@
     {
       "parameters": {
         "url": "https://cognia-kb-brs.dnext-ai.link/api/v1/documents",
-        "sendHeaders": true,
-        "headerParameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
           "parameters": [
             {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $('Get Access Token').first().json.access_token }}"
+              "name": "version",
+              "value": "v2.14"
+            },
+            {
+              "name": "name_filter",
+              "value": "BRS-568-DTTSUIEnhancements"
             }
           ]
         },
         "options": {
           "response": {
             "response": {
-              "fullResponse": true
+              "fullResponse": true,
+              "responseFormat": "json"
             }
-          },
-          "timeout": 15000
+          }
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        528,
-        -448
+        -16,
+        -336
       ],
       "id": "3e5ea3c8-638d-4ed8-b7b1-21bb78721110",
       "name": "Test Cognia KB Bearer",
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
     },
     {
       "parameters": {
@@ -1204,8 +1222,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3520,
-        64
+        3264,
+        960
       ],
       "id": "fb70a889-cb99-4665-b2bb-68ed909b8e8d",
       "name": "Edit Fields1"
@@ -1217,7 +1235,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        3360,
+        3936,
         -32
       ],
       "id": "866d31a2-d4b4-4f2b-b184-b386645d010a",
@@ -1256,13 +1274,13 @@
             }
           ]
         },
-        "limit": 1
+        "returnAll": true
       },
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        3712,
-        64
+        3824,
+        688
       ],
       "id": "183cb58d-3eca-43a7-b528-9dc0e87e4e31",
       "name": "Check Existing Upload",
@@ -1296,8 +1314,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        4096,
-        64
+        4304,
+        944
       ],
       "id": "05591af7-9a20-4756-a5f8-fbd9d07d8fdc",
       "name": "Already Uploaded?"
@@ -1309,8 +1327,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4480,
-        80
+        4816,
+        1104
       ],
       "id": "aafadf63-a16f-47ec-9bad-628129a1dc00",
       "name": "Restore Upload Item"
@@ -1398,8 +1416,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        4208,
-        -256
+        3152,
+        960
       ],
       "id": "4fdd4f01-6b1b-47e9-8cb9-8425dcf041c2",
       "name": "Mark as Skipped"
@@ -1433,21 +1451,21 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        4304,
-        80
+        4592,
+        912
       ],
       "id": "3f7f3516-235a-49c7-959c-f91049aae09f",
       "name": "Previous Timeout?"
     },
     {
       "parameters": {
-        "jsCode": "\nconst rows = $input.all()\n  .map(item => item.json)\n  .filter(row => row && row.spec_path && row.status);\n\nconst success = rows.find(row =>\n  row.status === 'SUCCESS' &&\n  Boolean(row.doc_id)\n);\n\nconst pending = rows.find(row =>\n  ['TIMEOUT', 'PENDING_REVIEW'].includes(row.status)\n);\n\nlet decision = 'UPLOAD';\n\nif (success) {\n  decision = 'SKIP';\n} else if (pending) {\n  decision = 'PENDING_REVIEW';\n}\n\nreturn [{\n  json: {\n    decision,\n    status: success?.status || pending?.status || '',\n    doc_id: success?.doc_id || '',\n    previous_error: pending?.error_message || '',\n    previous_audit_id: success?.id || pending?.id || null\n  }\n}];\n"
+        "jsCode": "\nconst rows = $input.all().map(item => item.json);\n\nconst payload = $('Prepare KB Payload').item.json;\n\nreturn [{\n  json: {\n    currentCommit: payload.commitId,\n    currentSpecPath: payload.sourcePath,\n    auditRecords: rows.map(row => ({\n      id: row.id,\n      commit_id: row.commit_id,\n      spec_path: row.spec_path,\n      status: row.status,\n      doc_id: row.doc_id\n    }))\n  }\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3920,
-        64
+        4032,
+        720
       ],
       "id": "4ed3116f-3904-42ae-9983-28dd2ca09720",
       "name": "Evaluate Upload History"
@@ -1459,8 +1477,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4624,
-        432
+        4896,
+        896
       ],
       "id": "e7555fbd-745b-49be-89ff-4856f41c33ea",
       "name": "Mark as Pending Review"
@@ -1477,7 +1495,7 @@
           "conditions": [
             {
               "id": "1538d0b3-8dbf-40f8-a20b-ff8ce22ea014",
-              "leftValue": "={{ ['FAILED', 'ERROR', 'PENDING_REVIEW'].includes(String($json.status ?? '').toUpperCase()) }}",
+              "leftValue": "={{ $json.allSuccessful === false }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -1493,8 +1511,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        5248,
-        112
+        4560,
+        -256
       ],
       "id": "6a3bd4f7-9f95-477e-8d29-b9a87034bb69",
       "name": "Should Send Failure Email?"
@@ -1510,7 +1528,7 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
-        16,
+        0,
         208
       ],
       "id": "97b48bff-1147-4240-abbb-6aac8bfa6486",
@@ -1523,7 +1541,7 @@
             {
               "id": "34cdaf76-423e-460e-92e0-4c33d6c30b91",
               "name": "pipeline_id",
-              "value": "={{ $json.pipelineId }}",
+              "value": "={{ $json.pipeline_id }}",
               "type": "string"
             },
             {
@@ -1545,8 +1563,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        5040,
-        -240
+        4656,
+        -400
       ],
       "id": "9b3cb13d-a0fa-4bed-9e9a-9b2cbd1b04ee",
       "name": "Edit Fields2"
@@ -1554,17 +1572,17 @@
     {
       "parameters": {
         "fromEmail": "n8n@dnext-technology.com",
-        "toEmail": "={{ 'hannan.toprak@dnext-technology.com, ibrahim.dogru@dnext-technology.com' }}\n",
-        "subject": "= {{ '[Cognia KB] Upload Failure - ' + ($json.spec_name || 'Unknown Document') }}",
+        "toEmail": "={{ 'hannan.toprak@dnext-technology.com' }}\n",
+        "subject": "={{ '[Cognia KB] Pipeline Action Required - ' + $('Check Upload Results').first().json.currentCommit }}",
         "emailFormat": "text",
-        "text": "={{\n  'Cognia KB Pipeline - Upload Failure Notification\\n\\n' +\n  'An error occurred while processing a specification document.\\n\\n' +\n  'Pipeline: ' + ($json.pipeline_id || 'N/A') + '\\n' +\n  'Document: ' + ($json.spec_name || 'N/A') + '\\n' +\n  'Document Type: ' + ($json.document_type || 'N/A') + '\\n' +\n  'Status: ' + ($json.status || 'N/A') + '\\n' +\n  'Commit ID: ' + ($json.commit_id || 'N/A') + '\\n' +\n  'File Path: ' + ($json.spec_path || 'N/A') + '\\n' +\n  'Error Details: ' + ($json.error_message || 'N/A') + '\\n' +\n  'Timestamp: ' + ($json.processed_at || $now.toISO()) + '\\n\\n' +\n  'Please review the n8n execution logs and audit table.\\n\\n' +\n  'This is an automated notification from Cognia KB Pipeline.'\n}}\n",
+        "text": "={{\n  (() => {\n    const r = $('Check Upload Results').first().json;\n\n    const pending = r.pendingReviewDocuments ?? [];\n\n    const pendingDetails = pending.length\n      ? pending.map((doc, index) => [\n          `${index + 1}. ${doc.spec_path}`,\n          `   Type: ${doc.document_type}`,\n          `   Operation: ${doc.operation || 'N/A'}`,\n          `   Doc ID: ${doc.doc_id || 'N/A'}`,\n          `   Reason: ${doc.reason || 'Not specified'}`\n        ].join('\\n')).join('\\n\\n')\n      : 'None';\n\n    return [\n      'Cognia KB Pipeline - Action Required',\n      '',\n      'Pipeline: ' + r.pipeline_id,\n      'Commit: ' + r.currentCommit,\n      '',\n      'Expected Documents: ' + r.expectedCount,\n      'Processed Documents: ' + r.processedCount,\n      'Uploaded: ' + r.uploadedCount,\n      'Skipped: ' + r.skippedCount,\n      'Recovered: ' + r.recoveredCount,\n      'Pending Review: ' + r.pendingReviewCount,\n      'Failed (including Pending Review): ' + r.failedCount,\n      '',\n      '=== PENDING REVIEW DOCUMENTS ===',\n      pendingDetails,\n      '',\n      '=== MISSING DOCUMENTS ===',\n      JSON.stringify(r.missingDocuments ?? [], null, 2),\n      '',\n      '=== UNEXPECTED DOCUMENTS ===',\n      JSON.stringify(r.unexpectedDocuments ?? [], null, 2),\n      '',\n      '=== DUPLICATE RESULTS ===',\n      JSON.stringify(r.duplicateDocuments ?? [], null, 2),\n      '',\n      'Tracker was NOT updated.',\n      '',\n      'Manual review is required.'\n    ].join('\\n');\n  })()\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        5504,
-        96
+        4800,
+        -272
       ],
       "id": "7e499fc5-7a47-4249-8955-716aa45fcebf",
       "name": "Send email",
@@ -1574,7 +1592,669 @@
           "id": "CNEwIMLz06iF3vj4",
           "name": "SMTP account"
         }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://cognia-kb-brs.dnext-ai.link/api/v1/documents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "v2.14"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -320,
+        -112
+      ],
+      "id": "cb7a9f30-6f19-406b-a543-d86a08762946",
+      "name": "Test Cognia KB Bearer1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
       }
+    },
+    {
+      "parameters": {
+        "binaryData": true,
+        "dataPropertyName": "fileMd5"
+      },
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        3312,
+        -32
+      ],
+      "id": "1f0a8cef-ccbd-422c-9e39-8f6a8adc8601",
+      "name": "Calculate File MD5"
+    },
+    {
+      "parameters": {
+        "jsCode": "const metadataItems = $('Resolve KB Target').all();\nconst fileItems = $('Convert to File').all();\nconst hashItems = $input.all();\n\nif (\n  metadataItems.length !== fileItems.length ||\n  fileItems.length !== hashItems.length\n) {\n  throw new Error('Item counts do not match');\n}\n\nreturn hashItems.map((hashItem, index) => {\n  const metadata = metadataItems[index].json;\n  const file = fileItems[index];\n  const fileMd5 = hashItem.json.fileMd5;\n\n  if (!fileMd5 || !file.binary?.data) {\n    throw new Error(`Missing MD5 or binary at index ${index}`);\n  }\n\n  return {\n    json: {\n      ...metadata,\n      fileMd5,\n    },\n    binary: file.binary,\n    pairedItem: { item: index },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        -32
+      ],
+      "id": "cb22eb6c-7b6a-43d0-8ff2-7374bbdf7a58",
+      "name": "Restore File Metadata"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.uploadUrl.replace(/\\/upload\\/?$/, '') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "={{ $json.targetVersion ?? 'v2.14' }}"
+            },
+            {
+              "name": "name_filter",
+              "value": "={{ $json.specName }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4064,
+        64
+      ],
+      "id": "0225a34f-f478-4fa9-8587-4f1b2f933041",
+      "name": "Check KB Document",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const response = $json;\nconst original = $('Loop Over Items').item.json;\nconst binary = $('Loop Over Items').item.binary;\n\nif (response.statusCode !== 200 || !Array.isArray(response.body)) {\n  throw new Error('KB lookup failed or returned invalid data');\n}\n\nconst version = original.targetVersion ?? 'v2.14';\n\nconst matches = response.body.filter(doc =>\n  doc.doc_name === original.specName &&\n  doc.type === 'md' &&\n  doc.sources?.includes(version) &&\n  doc.path?.split('/').pop() === original.fileName\n);\n\nconst sameContent = matches.filter(doc =>\n  typeof doc.md5 === 'string' &&\n  doc.md5.toLowerCase() === original.fileMd5?.toLowerCase()\n);\n\nlet decision;\nlet replaceDocId = null;\n\nif (matches.length === 0) {\n  decision = 'POST';\n} else if (sameContent.length > 0) {\n  decision = 'SKIP';\n} else if (matches.length === 1) {\n  decision = 'REPLACE';\n  replaceDocId = matches[0].doc_id ?? matches[0].id;\n} else {\n  decision = 'PENDING_REVIEW';\n}\n\nreturn {\n  json: {\n    ...original,\n    decision,\n    replaceDocId,\n    existingDocId:\n      sameContent[0]?.doc_id ??\n      sameContent[0]?.id ??\n      matches[0]?.doc_id ??\n      matches[0]?.id ??\n      null,\n    existingMd5: matches[0]?.md5 ?? null,\n    kbMatchCount: matches.length,\n    matchingContentCount: sameContent.length,\n    duplicateCleanupRequired: matches.length > 1,\n    duplicateDocIds: matches.map(doc => doc.doc_id ?? doc.id)\n  },\n  binary\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4224,
+        64
+      ],
+      "id": "3350b9b1-9c6e-4fea-8482-af64a1c96fcd",
+      "name": "Evaluate KB Document"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "SKIP",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "222e3dc0-99ba-41d5-bf55-a457abf5e3a2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SKIP"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9c9f3c63-2338-446f-94c2-decc0137fd68",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "POST",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "POST"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "31f77372-4bea-45d9-893a-c2596c4243ce",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "REPLACE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "REPLACE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9a46146e-4fda-4af4-949e-f9cbbaf5e798",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "PENDING_REVIEW",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "PENDING_REVIEW"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        4368,
+        80
+      ],
+      "id": "66129255-a328-4407-9c3b-b55e02c45488",
+      "name": "Route KB Decision"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "59923ef9-785f-4fb5-b1eb-274e7ef729b2",
+              "name": "status",
+              "value": "SKIPPED",
+              "type": "string"
+            },
+            {
+              "id": "52b263a4-bd55-4fac-b823-85ad18208945",
+              "name": "operation",
+              "value": "SKIP",
+              "type": "string"
+            },
+            {
+              "id": "d121ec26-962c-4fa8-b3a7-a51ba8d9a2cc",
+              "name": "errorMessage",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "15ed42db-62c7-4f7e-8a74-dfd1774e108f",
+              "name": "docId",
+              "value": "={{ $json.existingDocId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4432,
+        -112
+      ],
+      "id": "5eeadea0-bcbd-4e01-b715-e481168310d0",
+      "name": "Prepare Skip Result"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\nconst config = $('Pipeline Config').first().json;\n\nconst required = [\n  'commitId',\n  'sourcePath',\n  'specName',\n  'documentType',\n  'kbUrl',\n  'fileMd5'\n];\n\nconst missing = required.filter(field => !item[field]);\n\nif (missing.length > 0) {\n  throw new Error(\n    `Missing SKIP metadata: ${missing.join(', ')}`\n  );\n}\n\nif (item.decision !== 'SKIP') {\n  throw new Error(\n    `Unexpected decision for SKIP audit: ${item.decision}`\n  );\n}\n\nreturn {\n  json: {\n    pipeline_id: config.repoName,\n    commit_id: item.commitId,\n    spec_path: item.sourcePath,\n    spec_name: item.specName,\n    document_type: item.documentType,\n    kb_url: item.kbUrl,\n    target_version: item.targetVersion ?? 'v2.14',\n    doc_id: item.existingDocId ?? '',\n    status: 'SKIPPED',\n    error_message: '',\n    processed_at: new Date().toISOString(),\n    file_md5: item.fileMd5,\n    operation: 'SKIP'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4576,
+        -96
+      ],
+      "id": "c6951036-6c02-4bc7-95f8-4bbf0ce00523",
+      "name": "Prepare Skip Audit"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_kb_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4720,
+        -96
+      ],
+      "id": "b36f941d-9ff1-4229-a6b4-252d39769a20",
+      "name": "Save Skip Audit"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.uploadUrl }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "version",
+              "value": "={{ $json.targetVersion ?? 'v2.14' }}"
+            },
+            {
+              "name": "mode",
+              "value": "md"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4592,
+        32
+      ],
+      "id": "a4be3ed5-ba94-4167-8881-017f9e19a8d9",
+      "name": "Upload New Spec to KB",
+      "notesInFlow": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "ZkWehRVx5tvwzGAf",
+          "name": "KB test"
+        },
+        "httpHeaderAuth": {
+          "id": "doB1JZKxB6L1ew8V",
+          "name": "Header Auth account"
+        },
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "hem POST hem REPLACE"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.uploadUrl }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "version",
+              "value": "={{ $json.targetVersion ?? 'v2.14' }}"
+            },
+            {
+              "name": "mode",
+              "value": "md"
+            },
+            {
+              "name": "replace_doc_id",
+              "value": "={{ $json.replaceDocId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4656,
+        176
+      ],
+      "id": "c4408a17-5b93-41f8-9cc9-a22f80664c41",
+      "name": "Replace Existing Spec in KB",
+      "notesInFlow": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "ZkWehRVx5tvwzGAf",
+          "name": "KB test"
+        },
+        "httpHeaderAuth": {
+          "id": "doB1JZKxB6L1ew8V",
+          "name": "Header Auth account"
+        },
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "hem POST hem REPLACE"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $input.item.json;\nconst config = $('Pipeline Config').first().json;\n\n// POST ve REPLACE kollarından kaynak metadata'sını bul.\nconst source = $('Route KB Decision').item.json;\n\nif (!['POST', 'REPLACE'].includes(source.decision)) {\n  throw new Error(\n    `Unexpected upload decision: ${source.decision}`\n  );\n}\nconst required = [\n  'commitId',\n  'sourcePath',\n  'specName',\n  'documentType',\n  'kbUrl'\n];\n\nconst missing = required.filter(field => !source[field]);\n\nif (missing.length) {\n  throw new Error(`Missing metadata: ${missing.join(', ')}`);\n}\n\nfunction getErrorMessage(value) {\n  const error = value.error ?? value.message;\n\n  if (typeof error === 'string') return error;\n  if (error && typeof error === 'object') {\n    return error.message || JSON.stringify(error);\n  }\n\n  return '';\n}\n\nconst errorMessage = getErrorMessage(response);\n\nconst errorCode = String(\n  response.error?.code ?? response.code ?? ''\n).toUpperCase();\n\nconst statusCode = Number(\n  response.statusCode ?? response.error?.statusCode ?? 0\n);\n\nconst timeout =\n  ['ETIMEDOUT', 'ECONNABORTED', 'ESOCKETTIMEDOUT']\n    .includes(errorCode) ||\n  /timeout|timed out|etimedout|econnaborted/i.test(errorMessage);\n\nconst success =\n  response.status === 'indexed' &&\n  Boolean(response.doc_id);\n\nlet status;\nlet finalError = errorMessage;\n\nif (success) {\n  status = 'SUCCESS';\n  finalError = '';\n} else if (timeout || !statusCode || statusCode >= 500) {\n  status = 'PENDING_REVIEW';\n  finalError ||= 'Upload outcome is not confirmed';\n} else {\n  status = 'FAILED';\n  finalError ||= 'Upload failed';\n}\n\nreturn {\n  json: {\n    pipeline_id: config.repoName,\n    commit_id: source.commitId,\n    spec_path: source.sourcePath,\n    spec_name: source.specName,\n    document_type: source.documentType,\n    kb_url: source.kbUrl,\n    target_version:\n      response.version ||\n      source.targetVersion ||\n      'v2.14',\n    doc_id: success ? response.doc_id : '',\n    status,\n    error_message: finalError,\n    processed_at: new Date().toISOString(),\n    file_md5: source.fileMd5 || '',\n    operation: source.decision\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4832,
+        48
+      ],
+      "id": "b8b533bf-35c5-4ebf-bb2f-d341767eaecf",
+      "name": "Prepare Upload Audit v2"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_kb_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5008,
+        48
+      ],
+      "id": "7a8a6db7-4bbd-4731-9531-0c7d897b7370",
+      "name": "Save Upload Audit"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\nconst config = $('Pipeline Config').first().json;\n\n// REPLACE ve PENDING_REVIEW kararlarını kabul et\nif (!['PENDING_REVIEW', 'REPLACE'].includes(item.decision)) {\n  throw new Error(\n    `Unexpected decision: ${item.decision}`\n  );\n}\n\nconst required = [\n  'commitId',\n  'sourcePath',\n  'specName',\n  'documentType',\n  'kbUrl',\n  'fileMd5'\n];\n\nconst missing = required.filter(\n  field => !item[field]\n);\n\nif (missing.length > 0) {\n  throw new Error(\n    `Missing metadata: ${missing.join(', ')}`\n  );\n}\n\n// Karara göre hata açıklaması\nlet reason;\n\nif (item.decision === 'REPLACE') {\n  reason =\n    `REPLACE temporarily disabled due to CogniaKB backend bug. ` +\n    `Document ${item.specName} requires an update, ` +\n    `but automatic replacement is unsafe. ` +\n    `Existing KB document preserved.`;\n} else {\n  reason =\n    `Multiple KB records (${item.kbMatchCount}) ` +\n    `found for ${item.specName}; ` +\n    `none matches GitHub MD5 ${item.fileMd5}. ` +\n    `Manual review required.`;\n}\n\nreturn {\n  json: {\n    pipeline_id: config.repoName,\n    commit_id: item.commitId,\n    spec_path: item.sourcePath,\n    spec_name: item.specName,\n    document_type: item.documentType,\n    kb_url: item.kbUrl,\n    target_version: item.targetVersion ?? 'v2.14',\n    doc_id: item.decision === 'REPLACE'\n      ? (item.replaceDocId ?? '')\n      : '',\n    status: 'PENDING_REVIEW',\n    error_message: reason,\n    processed_at: new Date().toISOString(),\n    file_md5: item.fileMd5,\n    operation: item.decision === 'REPLACE'\n      ? 'REPLACE'\n      : 'REVIEW'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4528,
+        320
+      ],
+      "id": "23a90ac1-2892-4679-a75a-f81dbca1bd29",
+      "name": "Prepare Pending Review Audit"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_kb_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4720,
+        320
+      ],
+      "id": "ff715987-99c3-4b0b-aa7e-d6f52684bc11",
+      "name": "Save Pending Review Audit"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Route KB Decision').item.json.kbUrl.replace(/\\/$/, '') + '/api/v1/documents' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "version",
+              "value": "={{ $('Route KB Decision').item.json.targetVersion ?? 'v2.14' }}"
+            },
+            {
+              "name": "name_filter",
+              "value": "={{ $('Route KB Decision').item.json.specName }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4832,
+        176
+      ],
+      "id": "f02d9759-c669-47b0-85c0-5426ddba70ec",
+      "name": "Check KB After Upload Error",
+      "notesInFlow": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "ZkWehRVx5tvwzGAf",
+          "name": "KB test"
+        },
+        "httpHeaderAuth": {
+          "id": "doB1JZKxB6L1ew8V",
+          "name": "Header Auth account"
+        },
+        "oAuth2Api": {
+          "id": "veJG5FE0EPBESVwK",
+          "name": "cognia-kb"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "hem POST hem REPLACE"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $input.item.json;\nconst source = $('Route KB Decision').item.json;\nconst config = $('Pipeline Config').first().json;\n\nconst version = source.targetVersion ?? 'v2.14';\n\nconst required = [\n  'commitId',\n  'sourcePath',\n  'specName',\n  'fileName',\n  'documentType',\n  'kbUrl',\n  'fileMd5'\n];\n\nconst missing = required.filter(field => !source[field]);\n\nif (missing.length) {\n  throw new Error(\n    `Missing recovery metadata: ${missing.join(', ')}`\n  );\n}\n\nif (!['POST', 'REPLACE'].includes(source.decision)) {\n  throw new Error(\n    `Unexpected recovery decision: ${source.decision}`\n  );\n}\n\nif (\n  response.statusCode !== 200 ||\n  !Array.isArray(response.body)\n) {\n  throw new Error('KB recovery lookup returned invalid data');\n}\n\nconst matches = response.body.filter(doc =>\n  doc.doc_name === source.specName &&\n  doc.type === 'md' &&\n  doc.sources?.includes(version) &&\n  doc.path?.split('/').pop() === source.fileName\n);\n\nconst sameContent = matches.filter(doc =>\n  typeof doc.md5 === 'string' &&\n  doc.md5.toLowerCase() ===\n    source.fileMd5.toLowerCase()\n);\n\nconst recovered = sameContent.length > 0;\n\nconst status = recovered\n  ? 'RECOVERED'\n  : 'PENDING_REVIEW';\n\nconst reason = recovered\n  ? 'Upload response failed, but matching content exists in KB.'\n  : 'Upload response failed and matching content was not found. Manual verification required.';\n\nreturn {\n  json: {\n    pipeline_id: config.repoName,\n    commit_id: source.commitId,\n    spec_path: source.sourcePath,\n    spec_name: source.specName,\n    document_type: source.documentType,\n    kb_url: source.kbUrl,\n    target_version: version,\n    doc_id: recovered\n      ? (sameContent[0].doc_id ?? sameContent[0].id ?? '')\n      : '',\n    status,\n    error_message: recovered ? '' : reason,\n    processed_at: new Date().toISOString(),\n    file_md5: source.fileMd5,\n    operation: source.decision\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5168,
+        96
+      ],
+      "id": "f1b03667-b1c5-4aa4-b37d-202c6ddf5249",
+      "name": "Evaluate Upload Recovery"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_kb_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5312,
+        96
+      ],
+      "id": "0dc34ac0-4b61-401c-afd5-e73b10a23671",
+      "name": "Save Recovery Audit"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst response = $input.item.json;\nconst source = $('Route KB Decision').item.json;\nconst config = $('Pipeline Config').first().json;\n\nconst required = [\n  'commitId',\n  'sourcePath',\n  'specName',\n  'documentType',\n  'kbUrl',\n  'fileMd5'\n];\n\nconst missing = required.filter(field => !source[field]);\n\nif (missing.length > 0) {\n  throw new Error(\n    `Missing metadata: ${missing.join(', ')}`\n  );\n}\n\nconst rawError =\n  response.error?.message ??\n  response.error ??\n  response.message ??\n  'Unknown KB lookup error';\n\nconst errorMessage =\n  typeof rawError === 'string'\n    ? rawError\n    : JSON.stringify(rawError);\n\nreturn {\n  json: {\n    pipeline_id: config.repoName,\n    commit_id: source.commitId,\n    spec_path: source.sourcePath,\n    spec_name: source.specName,\n    document_type: source.documentType,\n    kb_url: source.kbUrl,\n    target_version: source.targetVersion ?? 'v2.14',\n    doc_id: '',\n    status: 'PENDING_REVIEW',\n    error_message:\n      'Upload outcome could not be verified. ' +\n      'KB recovery lookup failed: ' +\n      errorMessage,\n    processed_at: new Date().toISOString(),\n    file_md5: source.fileMd5,\n    operation: source.decision\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5040,
+        272
+      ],
+      "id": "a1fc6d1c-6683-4318-b438-56622d739cbb",
+      "name": "Prepare Recovery Lookup Failure"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "spec_kb_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5216,
+        272
+      ],
+      "id": "c3268b65-9ff8-4fa0-83c0-25b4ac553514",
+      "name": "Save Recovery Lookup Failure"
+    },
+    {
+      "parameters": {
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        3712,
+        -208
+      ],
+      "id": "8daea987-3c50-40cd-aa6e-318ce94e1978",
+      "name": "Limit"
     }
   ],
   "pinData": {},
@@ -1653,7 +2333,8 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     },
     "Compare Commits": {
@@ -1737,7 +2418,7 @@
       "main": [
         [
           {
-            "node": "Loop Over Items",
+            "node": "Calculate File MD5",
             "type": "main",
             "index": 0
           }
@@ -1762,11 +2443,6 @@
             "node": "If",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Edit Fields",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -1778,13 +2454,7 @@
     },
     "Save Audit Log": {
       "main": [
-        [
-          {
-            "node": "Should Send Failure Email?",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "If": {
@@ -1798,7 +2468,7 @@
         ],
         [
           {
-            "node": "Stop and Error",
+            "node": "Should Send Failure Email?",
             "type": "main",
             "index": 0
           }
@@ -1836,13 +2506,7 @@
     },
     "Edit Fields": {
       "main": [
-        [
-          {
-            "node": "Update Tracker",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Get Access Token": {
@@ -1863,13 +2527,7 @@
     },
     "Inspect Token Claims": {
       "main": [
-        [
-          {
-            "node": "Test Cognia KB Bearer",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "HTTP Request": {
@@ -1879,13 +2537,7 @@
     },
     "Edit Fields1": {
       "main": [
-        [
-          {
-            "node": "Check Existing Upload",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Loop Over Items": {
@@ -1899,7 +2551,7 @@
         ],
         [
           {
-            "node": "Edit Fields1",
+            "node": "Check KB Document",
             "type": "main",
             "index": 0
           }
@@ -1924,13 +2576,7 @@
     },
     "Already Uploaded?": {
       "main": [
-        [
-          {
-            "node": "Mark as Skipped",
-            "type": "main",
-            "index": 0
-          }
-        ],
+        [],
         [
           {
             "node": "Previous Timeout?",
@@ -1942,24 +2588,12 @@
     },
     "Restore Upload Item": {
       "main": [
-        [
-          {
-            "node": "Upload Spec to KB",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Mark as Skipped": {
       "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Previous Timeout?": {
@@ -1982,24 +2616,12 @@
     },
     "Evaluate Upload History": {
       "main": [
-        [
-          {
-            "node": "Already Uploaded?",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Mark as Pending Review": {
       "main": [
-        [
-          {
-            "node": "Save Audit Log",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Should Send Failure Email?": {
@@ -2011,13 +2633,7 @@
             "index": 0
           }
         ],
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Daily Pipeline Trigger": {
@@ -2044,6 +2660,22 @@
     },
     "Send email": {
       "main": [
+        []
+      ]
+    },
+    "Calculate File MD5": {
+      "main": [
+        [
+          {
+            "node": "Restore File Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore File Metadata": {
+      "main": [
         [
           {
             "node": "Loop Over Items",
@@ -2052,14 +2684,250 @@
           }
         ]
       ]
+    },
+    "Check KB Document": {
+      "main": [
+        [
+          {
+            "node": "Evaluate KB Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate KB Document": {
+      "main": [
+        [
+          {
+            "node": "Route KB Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route KB Decision": {
+      "main": [
+        [
+          {
+            "node": "Prepare Skip Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload New Spec to KB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Pending Review Audit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Pending Review Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Skip Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Skip Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Skip Audit": {
+      "main": [
+        [
+          {
+            "node": "Save Skip Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Skip Audit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Existing Spec in KB": {
+      "main": [
+        [
+          {
+            "node": "Prepare Upload Audit v2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check KB After Upload Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload New Spec to KB": {
+      "main": [
+        [
+          {
+            "node": "Prepare Upload Audit v2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check KB After Upload Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Upload Audit v2": {
+      "main": [
+        [
+          {
+            "node": "Save Upload Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Upload Audit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Pending Review Audit": {
+      "main": [
+        [
+          {
+            "node": "Save Pending Review Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Pending Review Audit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check KB After Upload Error": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Upload Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Recovery Lookup Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Upload Recovery": {
+      "main": [
+        [
+          {
+            "node": "Save Recovery Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Recovery Audit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Recovery Lookup Failure": {
+      "main": [
+        [
+          {
+            "node": "Save Recovery Lookup Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Recovery Lookup Failure": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        []
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "availableInMCP": false
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "bf8098f3-c3f6-4d61-b295-f2974f63c5c3",
+  "versionId": "ba7a0ff4-8b8a-4cb4-af7d-3c82976e4a09",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "9f6a250b5e41057ebc46f16e9a43e0df40b68d425919a02fddb29ca567a38e97"
